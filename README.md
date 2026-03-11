@@ -16,7 +16,7 @@ The React Compiler is not enabled on this template because of its impact on dev 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
 
 
-組員如何加入開發？
+## 組員如何加入開發？
 這是一個非常經典的「新手雷區」，請務必把這段貼給你的組員看！
 
 你的組員電腦裡也必須安裝好 Node.js 和 Git。接著請他們打開自己電腦的終端機（或命令提示字元），執行以下步驟：
