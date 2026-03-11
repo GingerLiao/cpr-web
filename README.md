@@ -22,7 +22,7 @@ If you are developing a production application, we recommend using TypeScript wi
 你的組員電腦裡也必須安裝好 Node.js 和 Git。接著請他們打開自己電腦的終端機（或命令提示字元），執行以下步驟：
 
 1. 把雲端程式碼「複製」到自己電腦裡：
-git clone https://github.com/你的帳號/cpr-web.git
+git clone https://github.com/GingerLiao/cpr-web.git
 (這會在他們電腦生出一個 cpr-web 資料夾)
 
 2. 走進資料夾：
