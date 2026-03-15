@@ -106,9 +106,8 @@ function Home() {
 }
 
 // ==========================================
-// 2. 真實 AED 地圖頁 (AEDMap) - 搭載 GPS 與 Leaflet
+// 2. 真實 AED 地圖頁 (AEDMap)
 // ==========================================
-// 自動將地圖中心對準使用者的元件
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -126,49 +125,47 @@ function AEDMap() {
   const [nearbyAeds, setNearbyAeds] = useState([]);
   const [errorMsg, setErrorMsg] = useState("正在抓取您的 GPS 定位...");
 
-  // 模擬中央大學校園內的 AED 資料庫
-  const mockAEDs = [
-    { id: 1, name: "管理學院 二館1F大廳", lat: 24.9665, lng: 121.1930, time: "24小時開放" },
-    { id: 2, name: "圖書館 1F大廳", lat: 24.9682, lng: 121.1945, time: "08:00-22:00" },
-    { id: 3, name: "資訊電機館 1F", lat: 24.9678, lng: 121.1925, time: "24小時開放" },
-    { id: 4, name: "綜合教學館 1F", lat: 24.9670, lng: 121.1950, time: "08:00-18:00" },
-    { id: 5, name: "女14舍 1F交誼廳", lat: 24.9650, lng: 121.1940, time: "24小時開放" },
-    { id: 6, name: "依仁堂 體育館1F", lat: 24.9645, lng: 121.1955, time: "08:00-22:00" }
-  ];
-
   useEffect(() => {
-    // 取得使用者真實 GPS 定位
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const currentLat = position.coords.latitude;
           const currentLng = position.coords.longitude;
           setUserLocation({ lat: currentLat, lng: currentLng });
-          setErrorMsg(null);
           
-          // 計算距離並排序
-          const calculatedAeds = mockAEDs.map(aed => ({
-            ...aed,
-            distance: getDistance(currentLat, currentLng, aed.lat, aed.lng)
-          })).sort((a, b) => a.distance - b.distance);
+          setErrorMsg("定位成功！正在下載衛福部全國 AED 資料庫...");
           
-          setNearbyAeds(calculatedAeds);
+          try {
+            const targetUrl = encodeURIComponent('https://tw-aed.mohw.gov.tw/openData?t=json');
+            const response = await fetch(`https://api.allorigins.win/raw?url=${targetUrl}`);
+            if (!response.ok) throw new Error("伺服器沒有回應");
+            
+            const data = await response.json();
+            const processedAeds = data
+              .map(item => ({
+                id: item.ID,
+                name: item.PlaceName,
+                lat: parseFloat(item.AED_Lat),
+                lng: parseFloat(item.AED_Lng),
+                address: item.PlaceAddr,
+                time: item.OpenHours || "未提供開放時間"
+              }))
+              .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
+              .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
+              .filter(aed => aed.distance < 3)
+              .sort((a, b) => a.distance - b.distance);
+            
+            setNearbyAeds(processedAeds);
+            if (processedAeds.length === 0) setErrorMsg("您方圓 3 公里內目前無 AED 資料。");
+            else setErrorMsg(null);
+
+          } catch (error) {
+            console.error("API 串接失敗:", error);
+            setErrorMsg("無法連接衛福部資料庫，請稍後再試。");
+          }
         },
-        (error) => {
-          // 若不允許定位，將中心點預設在中央大學，方便展示系統功能
-          setErrorMsg("無法取得定位，已切換至預設區域 (中央大學)。");
-          const defaultLat = 24.9675;
-          const defaultLng = 121.1935;
-          setUserLocation({ lat: defaultLat, lng: defaultLng });
-          
-          const calculatedAeds = mockAEDs.map(aed => ({
-            ...aed,
-            distance: getDistance(defaultLat, defaultLng, aed.lat, aed.lng)
-          })).sort((a, b) => a.distance - b.distance);
-          
-          setNearbyAeds(calculatedAeds);
-        },
-        { enableHighAccuracy: true, timeout: 5000 }
+        (error) => { setErrorMsg("無法取得定位，請確認手機或瀏覽器是否允許 GPS 權限。"); },
+        { enableHighAccuracy: true, timeout: 10000 }
       );
     } else {
       setErrorMsg("您的瀏覽器不支援定位功能。");
@@ -176,17 +173,13 @@ function AEDMap() {
   }, []);
 
   const handleBack = () => {
-    if (isFromEmergency) {
-      navigate('/emergency', { state: { step: 2 } });
-    } else {
-      navigate(-1);
-    }
+    if (isFromEmergency) navigate('/emergency', { state: { step: 2 } });
+    else navigate(-1);
   };
 
   return (
     <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
       <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden">
-        
         <header className="flex items-center p-6 pt-12 bg-white shadow-sm z-20 relative">
           <button onClick={handleBack} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 shadow-sm active:scale-90 transition-transform">
             <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
@@ -196,81 +189,61 @@ function AEDMap() {
 
         <main className="flex-1 relative flex flex-col">
           {errorMsg && (
-            <div className="bg-yellow-100 text-yellow-800 text-xs px-4 py-2 text-center font-bold absolute w-full z-[1000] shadow-md">
+            <div className="bg-yellow-100 text-yellow-800 text-xs px-4 py-2 text-center font-bold absolute w-full z-[1000] shadow-md flex items-center justify-center gap-2">
+              {errorMsg.includes("下載") && <div className="w-3 h-3 border-2 border-yellow-800 border-t-transparent rounded-full animate-spin"></div>}
               {errorMsg}
             </div>
           )}
           
-          {/* Leaflet 地圖區塊 */}
           <div className="flex-1 w-full bg-gray-200 z-10 relative">
             {userLocation ? (
-              <MapContainer 
-                center={[userLocation.lat, userLocation.lng]} 
-                zoom={16} 
-                style={{ height: '100%', width: '100%' }}
-                zoomControl={false}
-              >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                />
+              <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution='© CARTO' />
                 <MapUpdater center={[userLocation.lat, userLocation.lng]} />
-                
-                {/* 畫出使用者位置 */}
-                <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
-                  <Popup>📍 您的目前位置</Popup>
-                </Marker>
-
-                {/* 畫出所有 AED 位置 */}
-                {mockAEDs.map(aed => (
+                <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}><Popup>📍 您的目前位置</Popup></Marker>
+                {nearbyAeds.map(aed => (
                   <Marker key={aed.id} position={[aed.lat, aed.lng]} icon={aedIcon}>
                     <Popup>
-                      <b className="text-gray-800">{aed.name}</b><br/>
-                      <span className="text-xs text-gray-500">開放時間: {aed.time}</span>
+                      <b className="text-gray-800 text-sm">{aed.name}</b><br/>
+                      <span className="text-xs text-gray-500 mt-1 block">{aed.address}</span>
+                      <span className="text-xs font-bold text-green-600 block mt-1">🕒 {aed.time}</span>
                     </Popup>
                   </Marker>
                 ))}
               </MapContainer>
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="w-full h-full flex items-center justify-center bg-gray-100">
                 <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
               </div>
             )}
           </div>
 
-          {/* 底部清單與操作區 */}
           <div className="bg-white p-5 rounded-t-3xl shadow-[0_-10px_20px_rgba(0,0,0,0.1)] z-20 relative -mt-6">
             <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-4"></div>
-            <h2 className="text-base font-bold text-gray-800 mb-3">距離最近的 AED</h2>
-            
-            <div className="space-y-3 mb-5 overflow-y-auto max-h-[25vh] pr-2">
-              {nearbyAeds.slice(0, 3).map((aed, index) => (
-                <div key={aed.id} className="flex justify-between items-center border border-gray-100 p-3 rounded-xl bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xs">
-                      {index + 1}
+            <h2 className="text-base font-bold text-gray-800 mb-3 flex items-center justify-between">
+              距離最近的 AED <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded">資料來源: 衛福部</span>
+            </h2>
+            <div className="space-y-3 mb-5 overflow-y-auto max-h-[30vh] pr-2">
+              {nearbyAeds.length > 0 ? (
+                nearbyAeds.slice(0, 5).map((aed, index) => (
+                  <div key={aed.id} className="flex justify-between items-center border border-gray-100 p-3 rounded-xl bg-gray-50">
+                    <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
+                      <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xs shrink-0">{index + 1}</div>
+                      <div className="truncate">
+                        <div className="font-bold text-gray-800 text-sm truncate">{aed.name}</div>
+                        <div className="text-xs text-gray-500 mt-0.5 truncate">{aed.address}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold text-gray-800 text-sm">{aed.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">⏱ {aed.time}</div>
+                    <div className="text-right shrink-0">
+                      <div className="font-black text-blue-600">{aed.distance < 1 ? `${Math.round(aed.distance * 1000)}m` : `${aed.distance.toFixed(1)}km`}</div>
+                      <a href={`https://www.google.com/maps/dir/?api=1&destination=${aed.lat},${aed.lng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded mt-1 inline-block font-bold active:scale-95">Google 導航</a>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-black text-blue-600">
-                      {aed.distance < 1 ? `${Math.round(aed.distance * 1000)}m` : `${aed.distance.toFixed(1)}km`}
-                    </div>
-                    <a 
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${aed.lat},${aed.lng}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded mt-1 inline-block font-bold active:scale-95"
-                    >
-                      Google 導航
-                    </a>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="text-center text-gray-400 py-4 text-sm font-medium">{errorMsg ? "正在搜尋中..." : "方圓 3 公里內找不到 AED 資料"}</div>
+              )}
             </div>
-
             {isFromEmergency && (
               <button onClick={handleBack} className="w-full bg-red-500 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform animate-pulse">
                 取得 AED 後，返回進行 CPR
@@ -380,7 +353,7 @@ function EmergencyCPR() {
 }
 
 // ==========================================
-// 4. 緊急鏡頭輔助 (EmergencyCamera)
+// 4. 緊急鏡頭輔助 (EmergencyCamera) - 搭載修正版白框定位與按壓次數
 // ==========================================
 function EmergencyCamera() {
   const navigate = useNavigate();
@@ -388,7 +361,8 @@ function EmergencyCamera() {
   const canvasRef = useRef(null);
   
   const [bpm, setBpm] = useState(0);
-  const [warningMsg, setWarningMsg] = useState("請盡速開始按壓...");
+  const [pressCount, setPressCount] = useState(0); // 🔥 新增：獨立的按壓次數狀態
+  const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
 
@@ -421,6 +395,7 @@ function EmergencyCamera() {
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
+    setPressCount(0); // 重置次數
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120); 
@@ -462,27 +437,36 @@ function EmergencyCamera() {
 
         if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
           const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-          let errors = [];
-          if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
-          if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
+          
+          // 🔥 修正：嚴格檢查急救者是否在指定的白框內 (Y軸範圍從 0.2 到 0.7)
+          const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
 
-          setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好，請維持！");
+          if (!isInTargetBox) {
+            setWarningMsg("請移至畫面中央的白色虛線框內");
+          } else {
+            let errors = [];
+            if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
+            if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
 
-          const currentShoulderY = midShoulder.y;
-          if (positionStateRef.current === "up") {
-            if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-            if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
-          } else if (positionStateRef.current === "down") {
-            if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-            if (currentShoulderY < lowestYRef.current - threshold) {
-              positionStateRef.current = "up";
-              pressCountRef.current += 1;
-              highestYRef.current = currentShoulderY;
+            setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好，請維持！");
+
+            const currentShoulderY = midShoulder.y;
+            if (positionStateRef.current === "up") {
+              if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+              if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
+            } else if (positionStateRef.current === "down") {
+              if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+              if (currentShoulderY < lowestYRef.current - threshold) {
+                positionStateRef.current = "up";
+                pressCountRef.current += 1;
+                setPressCount(pressCountRef.current); // 🔥 同步更新畫面上的次數
+                highestYRef.current = currentShoulderY;
+              }
             }
-          }
 
-          const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-          if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+            const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+            if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+          }
 
           canvasCtx.beginPath();
           canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
@@ -492,6 +476,34 @@ function EmergencyCamera() {
           canvasCtx.stroke();
         }
       }
+      canvasCtx.restore();
+
+      // 🔥 修正：繪製縮短高度的定位框線，避免被按鈕遮擋
+      canvasCtx.save();
+      canvasCtx.lineWidth = 4;
+      canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+      canvasCtx.setLineDash([15, 10]); // 虛線樣式
+      const boxX = w * 0.25;
+      const boxY = h * 0.2;
+      const boxW = w * 0.5;
+      const boxH = h * 0.5; // 🔥 將高度從 0.7 縮短到 0.5，底部線會提高
+      canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
+      canvasCtx.setLineDash([]);
+      
+      // 畫出病患的示意標示 (緊貼著框線底部)
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      canvasCtx.beginPath();
+      canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
+      canvasCtx.fill();
+      canvasCtx.font = "bold 16px sans-serif";
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      canvasCtx.textAlign = "center";
+      canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+
+      // 頂部提示文字
+      canvasCtx.font = "bold 20px sans-serif";
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
       canvasCtx.restore();
     });
 
@@ -506,17 +518,27 @@ function EmergencyCamera() {
         <header className="flex items-center p-6 pt-12 bg-red-50 z-20 shadow-sm border-b-4 border-red-500">
           <h1 className="flex-1 text-center text-xl font-black text-red-600 tracking-widest">緊急 CPR 輔助系統</h1>
         </header>
-        <div className="flex justify-between items-center px-8 py-4 bg-red-50 z-20 shadow-md">
+        
+        {/* 🔥 新增儀表板：加入「按壓次數」 */}
+        <div className="flex justify-between items-center px-4 py-3 bg-red-50 z-20 shadow-md">
           <div className="flex flex-col items-center">
-            <span className="text-sm text-gray-700 font-bold mb-1">目前速率</span>
-            <span className={`text-4xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-600' : 'text-red-500'}`}>{bpm} <span className="text-base font-medium text-gray-600">下/分</span></span>
+            <span className="text-xs text-gray-700 font-bold mb-1">目前速率</span>
+            <span className={`text-3xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-600' : 'text-red-500'}`}>
+              {bpm} <span className="text-sm font-medium text-gray-600">/分</span>
+            </span>
           </div>
-          <div className="w-px h-12 bg-red-200"></div>
+          <div className="w-px h-10 bg-red-200"></div>
           <div className="flex flex-col items-center">
-            <span className="text-sm text-gray-700 font-bold mb-1">換手倒數</span>
+            <span className="text-xs text-gray-700 font-bold mb-1">按壓次數</span>
+            <span className="text-3xl font-black text-blue-600">{pressCount}</span>
+          </div>
+          <div className="w-px h-10 bg-red-200"></div>
+          <div className="flex flex-col items-center">
+            <span className="text-xs text-gray-700 font-bold mb-1">換手倒數</span>
             <span className="text-3xl font-black text-red-600 animate-pulse">{formatTime(timeLeft)}</span>
           </div>
         </div>
+
         <main className="flex-1 bg-black relative overflow-hidden flex flex-col">
           <video ref={videoRef} className="hidden" playsInline></video>
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
@@ -538,7 +560,7 @@ function EmergencyCamera() {
 }
 
 // ==========================================
-// 5. CPR 練習頁 (CPRPractice)
+// 5. CPR 練習頁 (CPRPractice) - 搭載修正版白框定位與按壓次數
 // ==========================================
 function CPRPractice() {
   const navigate = useNavigate();
@@ -546,7 +568,8 @@ function CPRPractice() {
   const canvasRef = useRef(null);
   
   const [bpm, setBpm] = useState(0);
-  const [warningMsg, setWarningMsg] = useState("等待開始...");
+  const [pressCount, setPressCount] = useState(0); // 🔥 新增：獨立的按壓次數狀態
+  const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90);
 
@@ -579,6 +602,7 @@ function CPRPractice() {
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
+    setPressCount(0); // 重置次數
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
@@ -630,36 +654,44 @@ function CPRPractice() {
         if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
           const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
           
-          let errors = [];
-          if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
-            errors.push("手肘請打直");
-            errorsLogRef.current.armBent += 1;
-          }
-          if (centerVertAngle < 80 || centerVertAngle > 100) {
-            errors.push("重心未垂直");
-            errorsLogRef.current.notVertical += 1;
-          }
-          if (Math.abs(midWrist.x - midShoulder.x) > 0.15) {
-            errorsLogRef.current.positionOffset += 1;
-          }
+          // 🔥 修正：嚴格檢查急救者是否在指定的白框內
+          const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
 
-          setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！");
-
-          const currentShoulderY = midShoulder.y;
-          if (positionStateRef.current === "up") {
-            if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-            if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
-          } else if (positionStateRef.current === "down") {
-            if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-            if (currentShoulderY < lowestYRef.current - threshold) {
-              positionStateRef.current = "up";
-              pressCountRef.current += 1;
-              highestYRef.current = currentShoulderY;
+          if (!isInTargetBox) {
+            setWarningMsg("請移至畫面中央的白色虛線框內");
+          } else {
+            let errors = [];
+            if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
+              errors.push("手肘請打直");
+              errorsLogRef.current.armBent += 1;
             }
-          }
+            if (centerVertAngle < 80 || centerVertAngle > 100) {
+              errors.push("重心未垂直");
+              errorsLogRef.current.notVertical += 1;
+            }
+            if (Math.abs(midWrist.x - midShoulder.x) > 0.15) {
+              errorsLogRef.current.positionOffset += 1;
+            }
 
-          const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-          if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+            setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！");
+
+            const currentShoulderY = midShoulder.y;
+            if (positionStateRef.current === "up") {
+              if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+              if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
+            } else if (positionStateRef.current === "down") {
+              if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+              if (currentShoulderY < lowestYRef.current - threshold) {
+                positionStateRef.current = "up";
+                pressCountRef.current += 1;
+                setPressCount(pressCountRef.current); // 🔥 同步更新畫面上的次數
+                highestYRef.current = currentShoulderY;
+              }
+            }
+
+            const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+            if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+          }
 
           canvasCtx.beginPath();
           canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
@@ -669,6 +701,34 @@ function CPRPractice() {
           canvasCtx.stroke();
         }
       }
+      canvasCtx.restore();
+
+      // 🔥 修正：繪製縮短高度的定位框線，避免被按鈕遮擋
+      canvasCtx.save();
+      canvasCtx.lineWidth = 4;
+      canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+      canvasCtx.setLineDash([15, 10]); // 虛線樣式
+      const boxX = w * 0.25;
+      const boxY = h * 0.2;
+      const boxW = w * 0.5;
+      const boxH = h * 0.5; // 🔥 將高度從 0.7 縮短到 0.5
+      canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
+      canvasCtx.setLineDash([]);
+      
+      // 畫出病患的示意標示 (緊貼著框線底部)
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      canvasCtx.beginPath();
+      canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
+      canvasCtx.fill();
+      canvasCtx.font = "bold 16px sans-serif";
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      canvasCtx.textAlign = "center";
+      canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+
+      // 頂部提示文字
+      canvasCtx.font = "bold 20px sans-serif";
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
       canvasCtx.restore();
     });
 
@@ -687,16 +747,22 @@ function CPRPractice() {
           <h1 className="flex-1 text-center text-xl font-bold text-gray-800 mr-10">CPR練習</h1>
         </header>
 
-        <div className="flex justify-between items-center px-8 py-4 bg-indigo-50 z-20 shadow-md">
+        {/* 🔥 新增儀表板：加入「按壓次數」 */}
+        <div className="flex justify-between items-center px-4 py-3 bg-indigo-50 z-20 shadow-md">
           <div className="flex flex-col items-center">
-            <span className="text-sm text-gray-500 font-bold mb-1">目前速率</span>
-            <span className={`text-4xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-500' : 'text-indigo-500'}`}>
-              {bpm} <span className="text-base font-medium text-gray-600">下/分</span>
+            <span className="text-xs text-gray-500 font-bold mb-1">目前速率</span>
+            <span className={`text-3xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-500' : 'text-indigo-500'}`}>
+              {bpm} <span className="text-sm font-medium text-gray-600">/分</span>
             </span>
           </div>
-          <div className="w-px h-12 bg-gray-300"></div>
+          <div className="w-px h-10 bg-gray-300"></div>
           <div className="flex flex-col items-center">
-            <span className="text-sm text-gray-500 font-bold mb-1">練習倒數</span>
+            <span className="text-xs text-gray-500 font-bold mb-1">按壓次數</span>
+            <span className="text-3xl font-black text-blue-500">{pressCount}</span>
+          </div>
+          <div className="w-px h-10 bg-gray-300"></div>
+          <div className="flex flex-col items-center">
+            <span className="text-xs text-gray-500 font-bold mb-1">練習倒數</span>
             <span className="text-3xl font-black text-red-500">{formatTime(timeLeft)}</span>
           </div>
         </div>
