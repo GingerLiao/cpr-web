@@ -44,5 +44,7 @@ git pull
 寫完扣，準備收工時 (推上雲端交班)：
 
 git add .
+
 git commit -m "寫下你今天改了什麼，例如：修改了首頁按鈕顏色"
+
 git push
