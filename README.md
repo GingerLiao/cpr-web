@@ -29,6 +29,28 @@
 
 ---
 
+## 📂 專案資料夾架構
+
+```text
+cpr-web/
+├── public/                  # 靜態資源資料夾 (打包時會直接複製)
+│   └── pose_landmarker_heavy.task # ⚠️ 重要：MediaPipe AI 視覺模型檔案必須放在這裡
+├── src/                     # 主要程式碼資料夾 (開發核心)
+│   ├── assets/              # 圖片、Icon 等靜態資源
+│   ├── App.jsx              # 🌟 核心程式碼：包含所有頁面 UI、路由與 CPR 判斷邏輯
+│   ├── main.jsx             # React 程式進入點 (將 App 掛載到網頁上)
+│   ├── App.css              # App 專屬樣式表
+│   └── index.css            # 全域樣式表 (包含 Tailwind CSS 基礎設定)
+├── index.html               # 網頁進入點 (網站外殼)
+├── package.json             # 專案套件清單 (npm install 的依據)與執行指令
+├── vite.config.js           # Vite 打包與開發伺服器設定檔
+├── eslint.config.js         # 程式碼語法檢查設定 (維持團隊 coding style)
+├── .gitignore               # Git 忽略清單 (確保 node_modules, venv 等龐大檔案不會上傳)
+└── README.md                # 專案說明文件 (也就是本檔案)
+```
+
+---
+
 ## 👨‍💻 組員如何加入開發？ (新手必看)
 
 請確保你的電腦已經安裝好 **Node.js** 與 **Git**。打開終端機（Terminal 或 CMD），依照以下步驟執行：
