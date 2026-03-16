@@ -3,13 +3,15 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import { Pose, POSE_CONNECTIONS } from '@mediapipe/pose';
 import { Camera } from '@mediapipe/camera_utils';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
-// 🔥 新增：導入 Leaflet 地圖套件
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 // ==========================================
-// 共用數學公式區
+// 共用數學公式與常數區
 // ==========================================
+const FOREARM_LENGTH_CM = 25.0; // 設定前臂長度為 25 公分做為比例尺
+const TARGET_BPM = 110; // 目標節拍器頻率
+
 function calculateAngle(a, b, c) {
   const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
   let angle = Math.abs(radians * 180.0 / Math.PI);
@@ -26,7 +28,6 @@ function calculateCenterVerticalAngle(ls, rs, lw, rw) {
   return { angle, midShoulder, midWrist };
 }
 
-// 經緯度距離計算公式 (Haversine formula)，回傳公里(km)
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; 
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -38,10 +39,6 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// ==========================================
-// 地圖客製化圖示設定
-// ==========================================
-// 使用者的藍色定位點
 const userIcon = L.divIcon({
   className: 'custom-user-icon',
   html: `<div style="background-color: #3b82f6; border-radius: 50%; width: 16px; height: 16px; border: 3px solid white; box-shadow: 0 0 10px rgba(59,130,246,0.8); animation: pulse 2s infinite;"></div>`,
@@ -49,7 +46,6 @@ const userIcon = L.divIcon({
   iconAnchor: [8, 8]
 });
 
-// AED的紅色地標點
 const aedIcon = L.divIcon({
   className: 'custom-aed-icon',
   html: `<div style="background-color: #ef4444; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: bold; border: 2px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.3);">AED</div>`,
@@ -353,16 +349,18 @@ function EmergencyCPR() {
 }
 
 // ==========================================
-// 4. 緊急鏡頭輔助 (EmergencyCamera) - 搭載修正版白框定位與按壓次數
+// 4. 緊急鏡頭輔助 (EmergencyCamera)
 // ==========================================
 function EmergencyCamera() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const audioCtxRef = useRef(null); // 🔥 新增：節拍器音效 Context
   
   const [bpm, setBpm] = useState(0);
-  const [pressCount, setPressCount] = useState(0); // 🔥 新增：獨立的按壓次數狀態
+  const [pressCount, setPressCount] = useState(0);
   const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
+  const [depthWarning, setDepthWarning] = useState(""); // 🔥 新增：深度警告文字
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
 
@@ -372,7 +370,31 @@ function EmergencyCamera() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
+  const baselineShoulderYRef = useRef(null); // 🔥 新增：基準線紀錄
+  const currentPressMaxDepthRef = useRef(0.0); // 🔥 新增：單次按壓最大深度
   const threshold = 0.02;
+
+  // 🔥 新增：背景節拍器 (110 BPM)
+  useEffect(() => {
+    let interval;
+    if (isTraining) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AudioContext();
+      interval = setInterval(() => {
+        if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+          const osc = audioCtxRef.current.createOscillator();
+          osc.connect(audioCtxRef.current.destination);
+          osc.frequency.value = 800; // 嗶聲音調
+          osc.start();
+          osc.stop(audioCtxRef.current.currentTime + 0.1);
+        }
+      }, (60 / TARGET_BPM) * 1000);
+    }
+    return () => {
+      clearInterval(interval);
+      if (audioCtxRef.current) audioCtxRef.current.close();
+    };
+  }, [isTraining]);
 
   useEffect(() => {
     let timer;
@@ -395,11 +417,19 @@ function EmergencyCamera() {
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
-    setPressCount(0); // 重置次數
+    setPressCount(0);
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120); 
     setWarningMsg("請開始按壓！");
+    setDepthWarning("");
+    baselineShoulderYRef.current = null;
+    currentPressMaxDepthRef.current = 0.0;
+    
+    // 喚醒 AudioContext (避免瀏覽器阻擋自動播放聲音)
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
   };
 
   const handleStopEmergency = () => {
@@ -434,11 +464,24 @@ function EmergencyCamera() {
         drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2, radius: 3 });
 
         const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+        const re = landmarks[14]; // 右手肘
 
         if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
           const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
           
-          // 🔥 修正：嚴格檢查急救者是否在指定的白框內 (Y軸範圍從 0.2 到 0.7)
+          // 🔥 新增：紀錄基準肩膀高度與深度計算
+          if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
+            baselineShoulderYRef.current = midShoulder.y;
+          }
+          
+          let depth_cm = 0.0;
+          const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
+          if (forearmPxLen > 0) {
+            const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
+            const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
+            depth_cm = depthPx * cmPerPx;
+          }
+
           const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
 
           if (!isInTargetBox) {
@@ -453,14 +496,28 @@ function EmergencyCamera() {
             const currentShoulderY = midShoulder.y;
             if (positionStateRef.current === "up") {
               if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-              if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
+              if (currentShoulderY > highestYRef.current + threshold) { 
+                positionStateRef.current = "down"; 
+                lowestYRef.current = currentShoulderY; 
+                currentPressMaxDepthRef.current = 0.0; // 下壓開始時歸零
+              }
             } else if (positionStateRef.current === "down") {
+              if (depth_cm > currentPressMaxDepthRef.current) {
+                currentPressMaxDepthRef.current = depth_cm;
+              }
               if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
               if (currentShoulderY < lowestYRef.current - threshold) {
                 positionStateRef.current = "up";
                 pressCountRef.current += 1;
-                setPressCount(pressCountRef.current); // 🔥 同步更新畫面上的次數
+                setPressCount(pressCountRef.current);
                 highestYRef.current = currentShoulderY;
+                
+                // 🔥 新增：單次按壓完成時檢查深度
+                if (currentPressMaxDepthRef.current < 5.0) {
+                  setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                } else {
+                  setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                }
               }
             }
 
@@ -478,19 +535,17 @@ function EmergencyCamera() {
       }
       canvasCtx.restore();
 
-      // 🔥 修正：繪製縮短高度的定位框線，避免被按鈕遮擋
       canvasCtx.save();
       canvasCtx.lineWidth = 4;
       canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-      canvasCtx.setLineDash([15, 10]); // 虛線樣式
+      canvasCtx.setLineDash([15, 10]);
       const boxX = w * 0.25;
       const boxY = h * 0.2;
       const boxW = w * 0.5;
-      const boxH = h * 0.5; // 🔥 將高度從 0.7 縮短到 0.5，底部線會提高
+      const boxH = h * 0.5;
       canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
       canvasCtx.setLineDash([]);
       
-      // 畫出病患的示意標示 (緊貼著框線底部)
       canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
       canvasCtx.beginPath();
       canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
@@ -500,10 +555,16 @@ function EmergencyCamera() {
       canvasCtx.textAlign = "center";
       canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
 
-      // 頂部提示文字
       canvasCtx.font = "bold 20px sans-serif";
       canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
       canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+      
+      // 🔥 新增：在畫布上顯示深度警告
+      if (isTrainingRef.current && depthWarning !== "") {
+        canvasCtx.font = "bold 24px sans-serif";
+        canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
+        canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+      }
       canvasCtx.restore();
     });
 
@@ -519,7 +580,6 @@ function EmergencyCamera() {
           <h1 className="flex-1 text-center text-xl font-black text-red-600 tracking-widest">緊急 CPR 輔助系統</h1>
         </header>
         
-        {/* 🔥 新增儀表板：加入「按壓次數」 */}
         <div className="flex justify-between items-center px-4 py-3 bg-red-50 z-20 shadow-md">
           <div className="flex flex-col items-center">
             <span className="text-xs text-gray-700 font-bold mb-1">目前速率</span>
@@ -560,16 +620,18 @@ function EmergencyCamera() {
 }
 
 // ==========================================
-// 5. CPR 練習頁 (CPRPractice) - 搭載修正版白框定位與按壓次數
+// 5. CPR 練習頁 (CPRPractice)
 // ==========================================
 function CPRPractice() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const audioCtxRef = useRef(null); // 🔥 新增：節拍器音效 Context
   
   const [bpm, setBpm] = useState(0);
-  const [pressCount, setPressCount] = useState(0); // 🔥 新增：獨立的按壓次數狀態
+  const [pressCount, setPressCount] = useState(0); 
   const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
+  const [depthWarning, setDepthWarning] = useState(""); // 🔥 新增：深度警告文字
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90);
 
@@ -579,8 +641,34 @@ function CPRPractice() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
+  const baselineShoulderYRef = useRef(null); // 🔥 新增：基準線紀錄
+  const currentPressMaxDepthRef = useRef(0.0); // 🔥 新增：單次按壓最大深度
   const threshold = 0.02;
-  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0 }); 
+  
+  // 🔥 新增：notDeepEnough 追蹤深度不足的次數
+  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 }); 
+
+  // 🔥 新增：背景節拍器 (110 BPM)
+  useEffect(() => {
+    let interval;
+    if (isTraining) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AudioContext();
+      interval = setInterval(() => {
+        if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+          const osc = audioCtxRef.current.createOscillator();
+          osc.connect(audioCtxRef.current.destination);
+          osc.frequency.value = 800; // 嗶聲音調
+          osc.start();
+          osc.stop(audioCtxRef.current.currentTime + 0.1);
+        }
+      }, (60 / TARGET_BPM) * 1000);
+    }
+    return () => {
+      clearInterval(interval);
+      if (audioCtxRef.current) audioCtxRef.current.close();
+    };
+  }, [isTraining]);
 
   useEffect(() => {
     let timer;
@@ -602,12 +690,20 @@ function CPRPractice() {
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
-    setPressCount(0); // 重置次數
-    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0 };
+    setPressCount(0); 
+    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(90);
     setWarningMsg("請開始按壓！");
+    setDepthWarning("");
+    baselineShoulderYRef.current = null;
+    currentPressMaxDepthRef.current = 0.0;
+    
+    // 喚醒 AudioContext
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
   };
 
   const handleStopTraining = () => {
@@ -650,11 +746,24 @@ function CPRPractice() {
         drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2, radius: 3 });
 
         const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+        const re = landmarks[14]; // 右手肘
 
         if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
           const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
           
-          // 🔥 修正：嚴格檢查急救者是否在指定的白框內
+          // 🔥 新增：紀錄基準肩膀高度與深度計算
+          if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
+            baselineShoulderYRef.current = midShoulder.y;
+          }
+          
+          let depth_cm = 0.0;
+          const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
+          if (forearmPxLen > 0) {
+            const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
+            const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
+            depth_cm = depthPx * cmPerPx;
+          }
+
           const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
 
           if (!isInTargetBox) {
@@ -678,14 +787,29 @@ function CPRPractice() {
             const currentShoulderY = midShoulder.y;
             if (positionStateRef.current === "up") {
               if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-              if (currentShoulderY > highestYRef.current + threshold) { positionStateRef.current = "down"; lowestYRef.current = currentShoulderY; }
+              if (currentShoulderY > highestYRef.current + threshold) { 
+                positionStateRef.current = "down"; 
+                lowestYRef.current = currentShoulderY; 
+                currentPressMaxDepthRef.current = 0.0; // 下壓開始時歸零
+              }
             } else if (positionStateRef.current === "down") {
+              if (depth_cm > currentPressMaxDepthRef.current) {
+                currentPressMaxDepthRef.current = depth_cm;
+              }
               if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
               if (currentShoulderY < lowestYRef.current - threshold) {
                 positionStateRef.current = "up";
                 pressCountRef.current += 1;
-                setPressCount(pressCountRef.current); // 🔥 同步更新畫面上的次數
+                setPressCount(pressCountRef.current); 
                 highestYRef.current = currentShoulderY;
+                
+                // 🔥 新增：單次按壓完成時檢查深度
+                if (currentPressMaxDepthRef.current < 5.0) {
+                  errorsLogRef.current.notDeepEnough += 1;
+                  setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                } else {
+                  setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                }
               }
             }
 
@@ -703,19 +827,17 @@ function CPRPractice() {
       }
       canvasCtx.restore();
 
-      // 🔥 修正：繪製縮短高度的定位框線，避免被按鈕遮擋
       canvasCtx.save();
       canvasCtx.lineWidth = 4;
       canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-      canvasCtx.setLineDash([15, 10]); // 虛線樣式
+      canvasCtx.setLineDash([15, 10]); 
       const boxX = w * 0.25;
       const boxY = h * 0.2;
       const boxW = w * 0.5;
-      const boxH = h * 0.5; // 🔥 將高度從 0.7 縮短到 0.5
+      const boxH = h * 0.5; 
       canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
       canvasCtx.setLineDash([]);
       
-      // 畫出病患的示意標示 (緊貼著框線底部)
       canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
       canvasCtx.beginPath();
       canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
@@ -725,10 +847,16 @@ function CPRPractice() {
       canvasCtx.textAlign = "center";
       canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
 
-      // 頂部提示文字
       canvasCtx.font = "bold 20px sans-serif";
       canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
       canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+      
+      // 🔥 新增：在畫布上顯示深度警告
+      if (isTrainingRef.current && depthWarning !== "") {
+        canvasCtx.font = "bold 24px sans-serif";
+        canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
+        canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+      }
       canvasCtx.restore();
     });
 
@@ -747,7 +875,6 @@ function CPRPractice() {
           <h1 className="flex-1 text-center text-xl font-bold text-gray-800 mr-10">CPR練習</h1>
         </header>
 
-        {/* 🔥 新增儀表板：加入「按壓次數」 */}
         <div className="flex justify-between items-center px-4 py-3 bg-indigo-50 z-20 shadow-md">
           <div className="flex flex-col items-center">
             <span className="text-xs text-gray-500 font-bold mb-1">目前速率</span>
@@ -796,8 +923,9 @@ function CPRPractice() {
 function CPRReport() {
   const navigate = useNavigate();
   const location = useLocation();
+  // 🔥 新增：加入 notDeepEnough 預設值
   const reportData = location.state || { 
-    finalBpm: 114, totalPresses: 300, errors: { armBent: 8, notVertical: 5, positionOffset: 8 },
+    finalBpm: 114, totalPresses: 300, errors: { armBent: 8, notVertical: 5, positionOffset: 8, notDeepEnough: 5 },
     date: '2025/12/15', time: '下午08:07', accuracy: 85
   };
 
@@ -844,6 +972,16 @@ function CPRReport() {
                 <div className="flex items-center gap-3">
                   <div className="w-full bg-blue-200 h-3 rounded-full overflow-hidden flex"><div className="bg-blue-500 h-full rounded-full" style={{ width: `${Math.min(reportData.errors.positionOffset * 10, 100)}%` }}></div></div>
                   <span className="text-xs font-bold text-blue-500 w-10 text-right">輕微</span>
+                </div>
+              </div>
+              {/* 🔥 新增：按壓深度不足統計 */}
+              <div>
+                <div className="flex justify-between items-end mb-1">
+                  <span className="font-bold text-gray-800 text-base">按壓深度不足(&lt;5cm)</span><span className="text-xs text-gray-500 font-bold">出現 {reportData.errors.notDeepEnough || 0} 次</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-full bg-purple-200 h-3 rounded-full overflow-hidden flex"><div className="bg-purple-500 h-full rounded-full" style={{ width: `${Math.min((reportData.errors.notDeepEnough || 0) * 10, 100)}%` }}></div></div>
+                  <span className="text-xs font-bold text-purple-500 w-10 text-right">致命</span>
                 </div>
               </div>
             </div>
