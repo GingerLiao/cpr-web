@@ -392,7 +392,10 @@ function EmergencyCamera() {
     }
     return () => {
       clearInterval(interval);
-      if (audioCtxRef.current) audioCtxRef.current.close();
+      // 加入防呆機制：確認狀態不是 closed 才執行關閉
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
+      }
     };
   }, [isTraining]);
 
@@ -666,7 +669,10 @@ function CPRPractice() {
     }
     return () => {
       clearInterval(interval);
-      if (audioCtxRef.current) audioCtxRef.current.close();
+      // 加入防呆機制：確認狀態不是 closed 才執行關閉
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
+      }
     };
   }, [isTraining]);
 
