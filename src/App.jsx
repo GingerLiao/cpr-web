@@ -1,8 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Pose, POSE_CONNECTIONS } from '@mediapipe/pose';
-import { Camera } from '@mediapipe/camera_utils';
-import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
+import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -327,7 +325,7 @@ function EmergencyCPR() {
 
             {step === 2 && (
               <div className="flex flex-col gap-4">
-                <button onClick={() => { !isCalling && step < 2 ? alert("請先完成 119 通話！") : navigate('/emergency-camera'); }} className="bg-blue-600 text-white px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-transform w-full">
+                <button onClick={() => { !isCalling && step < 2 ? alert("請先完成 119 通話！") : navigate('/emergency-camera'); }}  className="bg-blue-600 text-white px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-transform w-full">
                   開啟偵測鏡頭協助
                 </button>
                 <div className="flex justify-between">
@@ -343,13 +341,23 @@ function EmergencyCPR() {
 
             {/* 步驟 D：操作 AED*/}
             {step === 3 && (
-              <div className="flex justify-between mt-4">
-                 <button onClick={() => setStep(2)} className="bg-gray-200 text-gray-700 px-6 py-3 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
-                   上一步
-                 </button>
-                 <button onClick={() => navigate('/')} className="bg-green-600 text-white px-10 py-3 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
-                   完成
-                 </button>
+              <div className="flex flex-col gap-3">
+
+                <button 
+                  onClick={() => { !isCalling ? navigate('/emergency-camera') : alert("請先完成或取消 119 通話！"); }} 
+                  className={`${!isCalling ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'} px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-transform w-full`}
+                >
+                  {!isCalling ? "繼續開啟偵測鏡頭協助" : "通話中無法開啟鏡頭"}
+                </button>
+                
+                <div className="flex justify-end mt-2">
+                   <button 
+                     onClick={() => navigate('/')} 
+                     className="bg-[#dcf0d1] text-green-900 px-6 py-3 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
+                   >
+                    結束急救
+                   </button>
+                </div>
               </div>
             )}
           </div>
@@ -382,12 +390,14 @@ function EmergencyCamera() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const audioCtxRef = useRef(null); // 🔥 新增：節拍器音效 Context
+  const audioCtxRef = useRef(null); 
+  const poseLandmarkerRef = useRef(null);
+  const requestRef = useRef(null);
   
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0);
-  const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
-  const [depthWarning, setDepthWarning] = useState(""); // 🔥 新增：深度警告文字
+  const [warningMsg, setWarningMsg] = useState("模型載入中，請稍候...");
+  const [depthWarning, setDepthWarning] = useState(""); 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
 
@@ -397,11 +407,11 @@ function EmergencyCamera() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
-  const baselineShoulderYRef = useRef(null); // 🔥 新增：基準線紀錄
-  const currentPressMaxDepthRef = useRef(0.0); // 🔥 新增：單次按壓最大深度
+  const baselineShoulderYRef = useRef(null); 
+  const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
 
-  // 🔥 新增：背景節拍器 (110 BPM)
+  // 節拍器
   useEffect(() => {
     let interval;
     if (isTraining) {
@@ -411,7 +421,7 @@ function EmergencyCamera() {
         if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
           const osc = audioCtxRef.current.createOscillator();
           osc.connect(audioCtxRef.current.destination);
-          osc.frequency.value = 800; // 嗶聲音調
+          osc.frequency.value = 800;
           osc.start();
           osc.stop(audioCtxRef.current.currentTime + 0.1);
         }
@@ -419,7 +429,6 @@ function EmergencyCamera() {
     }
     return () => {
       clearInterval(interval);
-      // 加入防呆機制：確認狀態不是 closed 才執行關閉
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
       }
@@ -456,7 +465,6 @@ function EmergencyCamera() {
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
-    // 喚醒 AudioContext (避免瀏覽器阻擋自動播放聲音)
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
@@ -468,139 +476,226 @@ function EmergencyCamera() {
     navigate('/emergency', { state: { step: 3 } });
   };
 
+  // 🔥 初始化 Tasks API 與 Camera
   useEffect(() => {
-    const videoElement = videoRef.current;
-    const canvasElement = canvasRef.current;
-    const canvasCtx = canvasElement.getContext('2d');
-    const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    let lastVideoTime = -1;
+    let canvasCtx = null;
+    let drawingUtils = null;
 
-    pose.onResults((results) => {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
-      const w = canvasElement.width;
-      const h = canvasElement.height;
-
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, w, h);
-      canvasCtx.translate(w, 0);
-      canvasCtx.scale(-1, 1);
-      canvasCtx.drawImage(results.image, 0, 0, w, h);
-
-      if (results.poseLandmarks) {
-        const landmarks = results.poseLandmarks;
-        for (let i = 0; i < 11; i++) landmarks[i].visibility = 0;
-        drawConnectors(canvasCtx, landmarks, POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-        drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2, radius: 3 });
-
-        const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
-        const re = landmarks[14]; // 右手肘
-
-        if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
-          const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-          
-          // 🔥 新增：紀錄基準肩膀高度與深度計算
-          if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
-            baselineShoulderYRef.current = midShoulder.y;
-          }
-          
-          let depth_cm = 0.0;
-          const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
-          if (forearmPxLen > 0) {
-            const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
-            const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
-            depth_cm = depthPx * cmPerPx;
-          }
-
-          const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
-
-          if (!isInTargetBox) {
-            setWarningMsg("請移至畫面中央的白色虛線框內");
-          } else {
-            let errors = [];
-            if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
-            if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
-
-            setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好，請維持！");
-
-            const currentShoulderY = midShoulder.y;
-            if (positionStateRef.current === "up") {
-              if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-              if (currentShoulderY > highestYRef.current + threshold) { 
-                positionStateRef.current = "down"; 
-                lowestYRef.current = currentShoulderY; 
-                currentPressMaxDepthRef.current = 0.0; // 下壓開始時歸零
-              }
-            } else if (positionStateRef.current === "down") {
-              if (depth_cm > currentPressMaxDepthRef.current) {
-                currentPressMaxDepthRef.current = depth_cm;
-              }
-              if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-              if (currentShoulderY < lowestYRef.current - threshold) {
-                positionStateRef.current = "up";
-                pressCountRef.current += 1;
-                setPressCount(pressCountRef.current);
-                highestYRef.current = currentShoulderY;
-                
-                // 🔥 新增：單次按壓完成時檢查深度
-                if (currentPressMaxDepthRef.current < 5.0) {
-                  setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
-                } else {
-                  setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
-                }
-              }
+    const initializeMediaPipe = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
+        );
+        poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "/pose_landmarker_full.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1
+        });
+        setWarningMsg("請將急救者對準白色虛線框...");
+        
+        // 啟動相機
+        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+          .then((stream) => {
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              videoRef.current.play();
             }
+          })
+          .catch((err) => {
+            console.error("相機權限遭拒或錯誤:", err);
+            setWarningMsg("請允許相機權限！");
+          });
+      } catch (error) {
+        console.error("模型載入失敗:", error);
+      }
+    };
 
-            const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-            if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+    initializeMediaPipe();
+
+    // 核心預測與渲染迴圈
+    const renderLoop = () => {
+      const videoElement = videoRef.current;
+      const canvasElement = canvasRef.current;
+      
+      if (videoElement && videoElement.readyState >= 2 && poseLandmarkerRef.current && canvasElement) {
+        if (!canvasCtx) {
+          canvasCtx = canvasElement.getContext('2d');
+          drawingUtils = new DrawingUtils(canvasCtx);
+        }
+
+        if (lastVideoTime !== videoElement.currentTime) {
+          lastVideoTime = videoElement.currentTime;
+          let startTimeMs = performance.now();
+          const results = poseLandmarkerRef.current.detectForVideo(videoElement, startTimeMs);
+
+          canvasElement.width = videoElement.videoWidth;
+          canvasElement.height = videoElement.videoHeight;
+          const w = canvasElement.width;
+          const h = canvasElement.height;
+
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, w, h);
+          canvasCtx.translate(w, 0);
+          canvasCtx.scale(-1, 1);
+          canvasCtx.drawImage(videoElement, 0, 0, w, h);
+
+          if (results.landmarks && results.landmarks.length > 0) {
+            const landmarks = results.landmarks[0];
+            
+                     
+            const TARGET_LANDMARKS = [11, 12, 13, 14, 15, 16, 23, 24];
+
+            const UPPER_BODY_CONNECTIONS = [
+              { start: 11, end: 12 }, // 肩膀相連
+              { start: 11, end: 13 }, // 左肩到左手肘
+              { start: 13, end: 15 }, // 左手肘到左手腕
+              { start: 12, end: 14 }, // 右肩到右手肘
+              { start: 14, end: 16 }, // 右手肘到右手腕
+              { start: 11, end: 23 }, // 左肩到左髖部
+              { start: 12, end: 24 }, // 右肩到右髖部
+              { start: 23, end: 24 }  // 髖部相連
+            ];
+
+       
+            landmarks.forEach((lm, index) => {
+              if (!TARGET_LANDMARKS.includes(index)) {
+                if (lm) lm.visibility = 0; 
+              }
+            });
+
+            drawingUtils.drawConnectors(landmarks, UPPER_BODY_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+            
+            const pointsToDraw = TARGET_LANDMARKS.map(index => landmarks[index]).filter(Boolean);
+            drawingUtils.drawLandmarks(pointsToDraw, { color: '#FF0000', lineWidth: 2, radius: 3 });
+
+
+            const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+            const re = landmarks[14]; 
+
+            if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
+              const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
+              
+              if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
+                baselineShoulderYRef.current = midShoulder.y;
+              }
+              
+              let depth_cm = 0.0;
+              const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
+              if (forearmPxLen > 0) {
+                const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
+                const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
+                depth_cm = depthPx * cmPerPx;
+              }
+
+              const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
+
+              if (!isInTargetBox) {
+                setWarningMsg("請移至畫面中央的白色虛線框內");
+              } else {
+                let errors = [];
+                if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
+                if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
+
+                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好，請維持！");
+
+                const currentShoulderY = midShoulder.y;
+                if (positionStateRef.current === "up") {
+                  if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentShoulderY > highestYRef.current + threshold) { 
+                    positionStateRef.current = "down"; 
+                    lowestYRef.current = currentShoulderY; 
+                    currentPressMaxDepthRef.current = 0.0; 
+                  }
+                } else if (positionStateRef.current === "down") {
+                  if (depth_cm > currentPressMaxDepthRef.current) {
+                    currentPressMaxDepthRef.current = depth_cm;
+                  }
+                  if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+                  if (currentShoulderY < lowestYRef.current - threshold) {
+                    positionStateRef.current = "up";
+                    pressCountRef.current += 1;
+                    setPressCount(pressCountRef.current);
+                    highestYRef.current = currentShoulderY;
+                    
+                    if (currentPressMaxDepthRef.current < 5.0) {
+                      setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    } else {
+                      setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    }
+                  }
+                }
+
+                const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+                if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+              }
+
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
+              canvasCtx.lineTo(w - midWrist.x * w, midWrist.y * h);
+              canvasCtx.strokeStyle = "#FFFF00";
+              canvasCtx.lineWidth = 5;
+              canvasCtx.stroke();
+            }
           }
+          canvasCtx.restore();
 
+          // UI 疊加層繪製
+          canvasCtx.save();
+          canvasCtx.lineWidth = 4;
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+          canvasCtx.setLineDash([15, 10]);
+          const boxX = w * 0.25;
+          const boxY = h * 0.2;
+          const boxW = w * 0.5;
+          const boxH = h * 0.5;
+          canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
+          canvasCtx.setLineDash([]);
+          
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
           canvasCtx.beginPath();
-          canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
-          canvasCtx.lineTo(w - midWrist.x * w, midWrist.y * h);
-          canvasCtx.strokeStyle = "#FFFF00";
-          canvasCtx.lineWidth = 5;
-          canvasCtx.stroke();
+          canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
+          canvasCtx.fill();
+          canvasCtx.font = "bold 16px sans-serif";
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          canvasCtx.textAlign = "center";
+          canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+
+          canvasCtx.font = "bold 20px sans-serif";
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+          
+          if (isTrainingRef.current && depthWarning !== "") {
+            canvasCtx.font = "bold 24px sans-serif";
+            canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+          }
+          canvasCtx.restore();
         }
       }
-      canvasCtx.restore();
+      requestRef.current = requestAnimationFrame(renderLoop);
+    };
 
-      canvasCtx.save();
-      canvasCtx.lineWidth = 4;
-      canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-      canvasCtx.setLineDash([15, 10]);
-      const boxX = w * 0.25;
-      const boxY = h * 0.2;
-      const boxW = w * 0.5;
-      const boxH = h * 0.5;
-      canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
-      canvasCtx.setLineDash([]);
-      
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      canvasCtx.beginPath();
-      canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
-      canvasCtx.fill();
-      canvasCtx.font = "bold 16px sans-serif";
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      canvasCtx.textAlign = "center";
-      canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+    if (videoRef.current) {
+      videoRef.current.addEventListener('loadeddata', renderLoop);
+    }
 
-      canvasCtx.font = "bold 20px sans-serif";
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
-      
-      // 🔥 新增：在畫布上顯示深度警告
-      if (isTrainingRef.current && depthWarning !== "") {
-        canvasCtx.font = "bold 24px sans-serif";
-        canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-        canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+    // 清理機制
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (videoRef.current) {
+        videoRef.current.removeEventListener('loadeddata', renderLoop);
+        if (videoRef.current.srcObject) {
+          videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+        }
       }
-      canvasCtx.restore();
-    });
-
-    const camera = new Camera(videoElement, { onFrame: async () => { await pose.send({ image: videoElement }); }, width: 1280, height: 720 });
-    camera.start();
-    return () => { camera.stop(); pose.close(); };
+      if (poseLandmarkerRef.current) {
+        poseLandmarkerRef.current.close();
+      }
+    };
   }, []);
 
   return (
@@ -632,7 +727,7 @@ function EmergencyCamera() {
         <main className="flex-1 bg-black relative overflow-hidden flex flex-col">
           <video ref={videoRef} className="hidden" playsInline></video>
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
-          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full flex items-center gap-3 shadow-lg transition-colors w-[85%] justify-center z-10 ${!isTraining ? 'bg-gray-600' : warningMsg.includes("良好") ? 'bg-green-600' : 'bg-red-600'} bg-opacity-90 text-white backdrop-blur-sm`}>
+          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full flex items-center gap-3 shadow-lg transition-colors w-[85%] justify-center z-10 ${!isTraining ? 'bg-gray-600' : warningMsg.includes("良好") || warningMsg.includes("完美") ? 'bg-green-600' : 'bg-red-600'} bg-opacity-90 text-white backdrop-blur-sm`}>
             <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
             <span className="font-bold tracking-wider text-center">{warningMsg}</span>
           </div>
@@ -640,7 +735,7 @@ function EmergencyCamera() {
             {!isTraining ? (
               <button onClick={handleStartEmergency} className="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">開始</button>
             ) : (
-              <button onClick={handleStopEmergency} className="w-full bg-red-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">結束偵測</button>
+              <button onClick={handleStopEmergency} className="w-full bg-red-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">AED已抵達/暫停按壓</button>
             )}
           </div>
         </main>
@@ -656,14 +751,16 @@ function CPRPractice() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const audioCtxRef = useRef(null); // 🔥 新增：節拍器音效 Context
+  const audioCtxRef = useRef(null); 
+  const poseLandmarkerRef = useRef(null);
+  const requestRef = useRef(null);
   
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0); 
-  const [warningMsg, setWarningMsg] = useState("請將急救者對準白色虛線框...");
-  const [depthWarning, setDepthWarning] = useState(""); // 🔥 新增：深度警告文字
+  const [warningMsg, setWarningMsg] = useState("模型載入中，請稍候...");
+  const [depthWarning, setDepthWarning] = useState(""); 
   const [isTraining, setIsTraining] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(90);
+  const [timeLeft, setTimeLeft] = useState(120);
 
   const isTrainingRef = useRef(false);
   const pressCountRef = useRef(0);
@@ -671,14 +768,13 @@ function CPRPractice() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
-  const baselineShoulderYRef = useRef(null); // 🔥 新增：基準線紀錄
-  const currentPressMaxDepthRef = useRef(0.0); // 🔥 新增：單次按壓最大深度
+  const baselineShoulderYRef = useRef(null); 
+  const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
   
-  // 🔥 新增：notDeepEnough 追蹤深度不足的次數
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 }); 
 
-  // 🔥 新增：背景節拍器 (110 BPM)
+  // 節拍器
   useEffect(() => {
     let interval;
     if (isTraining) {
@@ -688,7 +784,7 @@ function CPRPractice() {
         if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
           const osc = audioCtxRef.current.createOscillator();
           osc.connect(audioCtxRef.current.destination);
-          osc.frequency.value = 800; // 嗶聲音調
+          osc.frequency.value = 800;
           osc.start();
           osc.stop(audioCtxRef.current.currentTime + 0.1);
         }
@@ -696,7 +792,6 @@ function CPRPractice() {
     }
     return () => {
       clearInterval(interval);
-      // 加入防呆機制：確認狀態不是 closed 才執行關閉
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
       }
@@ -727,13 +822,12 @@ function CPRPractice() {
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
-    setTimeLeft(90);
+    setTimeLeft(120);
     setWarningMsg("請開始按壓！");
     setDepthWarning("");
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
-    // 喚醒 AudioContext
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume();
     }
@@ -753,149 +847,231 @@ function CPRPractice() {
     navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy } });
   };
 
+  // 🔥 初始化 Tasks API 與 Camera
   useEffect(() => {
-    const videoElement = videoRef.current;
-    const canvasElement = canvasRef.current;
-    const canvasCtx = canvasElement.getContext('2d');
-    const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    let lastVideoTime = -1;
+    let canvasCtx = null;
+    let drawingUtils = null;
 
-    pose.onResults((results) => {
-      canvasElement.width = videoElement.videoWidth;
-      canvasElement.height = videoElement.videoHeight;
-      const w = canvasElement.width;
-      const h = canvasElement.height;
-
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, w, h);
-      canvasCtx.translate(w, 0);
-      canvasCtx.scale(-1, 1);
-      canvasCtx.drawImage(results.image, 0, 0, w, h);
-
-      if (results.poseLandmarks) {
-        const landmarks = results.poseLandmarks;
-        for (let i = 0; i < 11; i++) landmarks[i].visibility = 0;
-        drawConnectors(canvasCtx, landmarks, POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-        drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2, radius: 3 });
-
-        const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
-        const re = landmarks[14]; // 右手肘
-
-        if (isTrainingRef.current && ls.visibility > 0.5 && lw.visibility > 0.5) {
-          const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-          
-          // 🔥 新增：紀錄基準肩膀高度與深度計算
-          if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
-            baselineShoulderYRef.current = midShoulder.y;
-          }
-          
-          let depth_cm = 0.0;
-          const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
-          if (forearmPxLen > 0) {
-            const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
-            const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
-            depth_cm = depthPx * cmPerPx;
-          }
-
-          const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
-
-          if (!isInTargetBox) {
-            setWarningMsg("請移至畫面中央的白色虛線框內");
-          } else {
-            let errors = [];
-            if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
-              errors.push("手肘請打直");
-              errorsLogRef.current.armBent += 1;
+    const initializeMediaPipe = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
+        );
+        poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "/pose_landmarker_full.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1
+        });
+        setWarningMsg("請將急救者對準白色虛線框...");
+        
+        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+          .then((stream) => {
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              videoRef.current.play();
             }
-            if (centerVertAngle < 80 || centerVertAngle > 100) {
-              errors.push("重心未垂直");
-              errorsLogRef.current.notVertical += 1;
-            }
-            if (Math.abs(midWrist.x - midShoulder.x) > 0.15) {
-              errorsLogRef.current.positionOffset += 1;
-            }
+          })
+          .catch((err) => {
+            console.error("相機權限遭拒或錯誤:", err);
+            setWarningMsg("請允許相機權限！");
+          });
+      } catch (error) {
+        console.error("模型載入失敗:", error);
+      }
+    };
 
-            setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！");
+    initializeMediaPipe();
 
-            const currentShoulderY = midShoulder.y;
-            if (positionStateRef.current === "up") {
-              if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-              if (currentShoulderY > highestYRef.current + threshold) { 
-                positionStateRef.current = "down"; 
-                lowestYRef.current = currentShoulderY; 
-                currentPressMaxDepthRef.current = 0.0; // 下壓開始時歸零
+    // 核心預測與渲染迴圈
+    const renderLoop = () => {
+      const videoElement = videoRef.current;
+      const canvasElement = canvasRef.current;
+      
+      if (videoElement && videoElement.readyState >= 2 && poseLandmarkerRef.current && canvasElement) {
+        if (!canvasCtx) {
+          canvasCtx = canvasElement.getContext('2d');
+          drawingUtils = new DrawingUtils(canvasCtx);
+        }
+
+        if (lastVideoTime !== videoElement.currentTime) {
+          lastVideoTime = videoElement.currentTime;
+          let startTimeMs = performance.now();
+          const results = poseLandmarkerRef.current.detectForVideo(videoElement, startTimeMs);
+
+          canvasElement.width = videoElement.videoWidth;
+          canvasElement.height = videoElement.videoHeight;
+          const w = canvasElement.width;
+          const h = canvasElement.height;
+
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, w, h);
+          canvasCtx.translate(w, 0);
+          canvasCtx.scale(-1, 1);
+          canvasCtx.drawImage(videoElement, 0, 0, w, h);
+
+          if (results.landmarks && results.landmarks.length > 0) {
+            const landmarks = results.landmarks[0];
+            const TARGET_LANDMARKS = [11, 12, 13, 14, 15, 16, 23, 24]
+
+            const UPPER_BODY_CONNECTIONS = [
+              { start: 11, end: 12 }, // 肩膀相連
+              { start: 11, end: 13 }, // 左肩到左手肘
+              { start: 13, end: 15 }, // 左手肘到左手腕
+              { start: 12, end: 14 }, // 右肩到右手肘
+              { start: 14, end: 16 }, // 右手肘到右手腕
+              { start: 11, end: 23 }, // 左肩到左髖部
+              { start: 12, end: 24 }, // 右肩到右髖部
+              { start: 23, end: 24 }  // 髖部相連
+            ];
+
+            landmarks.forEach((lm, index) => {
+              if (!TARGET_LANDMARKS.includes(index)) {
+                if (lm) lm.visibility = 0; 
               }
-            } else if (positionStateRef.current === "down") {
-              if (depth_cm > currentPressMaxDepthRef.current) {
-                currentPressMaxDepthRef.current = depth_cm;
+            });
+
+            drawingUtils.drawConnectors(landmarks, UPPER_BODY_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+            
+            const pointsToDraw = TARGET_LANDMARKS.map(index => landmarks[index]).filter(Boolean);
+            drawingUtils.drawLandmarks(pointsToDraw, { color: '#FF0000', lineWidth: 2, radius: 3 });
+
+            const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+            const re = landmarks[14];
+
+            if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
+              const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
+              
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(midShoulder.x * w, midShoulder.y * h);
+              canvasCtx.lineTo(midWrist.x * w, midWrist.y * h);
+              canvasCtx.strokeStyle = "#FFFF00";
+              canvasCtx.lineWidth = 5;
+              canvasCtx.stroke();
+              
+              if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
+                baselineShoulderYRef.current = midShoulder.y;
               }
-              if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-              if (currentShoulderY < lowestYRef.current - threshold) {
-                positionStateRef.current = "up";
-                pressCountRef.current += 1;
-                setPressCount(pressCountRef.current); 
-                highestYRef.current = currentShoulderY;
-                
-                // 🔥 新增：單次按壓完成時檢查深度
-                if (currentPressMaxDepthRef.current < 5.0) {
-                  errorsLogRef.current.notDeepEnough += 1;
-                  setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
-                } else {
-                  setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+              
+              let depth_cm = 0.0;
+              const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
+              if (forearmPxLen > 0) {
+                const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
+                const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
+                depth_cm = depthPx * cmPerPx;
+              }
+
+              const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
+
+              if (!isInTargetBox) {
+                setWarningMsg("請移至畫面中央的白色虛線框內");
+              } else {
+                let errors = [];
+                if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
+                  errors.push("手肘請打直");
+                  errorsLogRef.current.armBent += 1;
                 }
+                if (centerVertAngle < 80 || centerVertAngle > 100) {
+                  errors.push("重心未垂直");
+                  errorsLogRef.current.notVertical += 1;
+                }
+                if (Math.abs(midWrist.x - midShoulder.x) > 0.15) {
+                  errorsLogRef.current.positionOffset += 1;
+                }
+
+                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！");
+
+                const currentShoulderY = midShoulder.y;
+                if (positionStateRef.current === "up") {
+                  if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentShoulderY > highestYRef.current + threshold) { 
+                    positionStateRef.current = "down"; 
+                    lowestYRef.current = currentShoulderY; 
+                    currentPressMaxDepthRef.current = 0.0;
+                  }
+                } else if (positionStateRef.current === "down") {
+                  if (depth_cm > currentPressMaxDepthRef.current) {
+                    currentPressMaxDepthRef.current = depth_cm;
+                  }
+                  if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+                  if (currentShoulderY < lowestYRef.current - threshold) {
+                    positionStateRef.current = "up";
+                    pressCountRef.current += 1;
+                    setPressCount(pressCountRef.current); 
+                    highestYRef.current = currentShoulderY;
+                    
+                    if (currentPressMaxDepthRef.current < 5.0) {
+                      errorsLogRef.current.notDeepEnough += 1;
+                      setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    } else {
+                      setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    }
+                  }
+                }
+
+                const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+                if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
               }
             }
-
-            const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-            if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
           }
+          canvasCtx.restore();
 
+          // UI 疊加層繪製
+          canvasCtx.save();
+          canvasCtx.lineWidth = 4;
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+          canvasCtx.setLineDash([15, 10]); 
+          const boxX = w * 0.25;
+          const boxY = h * 0.2;
+          const boxW = w * 0.5;
+          const boxH = h * 0.5; 
+          canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
+          canvasCtx.setLineDash([]);
+          
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
           canvasCtx.beginPath();
-          canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
-          canvasCtx.lineTo(w - midWrist.x * w, midWrist.y * h);
-          canvasCtx.strokeStyle = "#FFFF00";
-          canvasCtx.lineWidth = 5;
-          canvasCtx.stroke();
+          canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
+          canvasCtx.fill();
+          canvasCtx.font = "bold 16px sans-serif";
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          canvasCtx.textAlign = "center";
+          canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+
+          canvasCtx.font = "bold 20px sans-serif";
+          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+          
+          if (isTrainingRef.current && depthWarning !== "") {
+            canvasCtx.font = "bold 24px sans-serif";
+            canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+          }
+          canvasCtx.restore();
         }
       }
-      canvasCtx.restore();
+      requestRef.current = requestAnimationFrame(renderLoop);
+    };
 
-      canvasCtx.save();
-      canvasCtx.lineWidth = 4;
-      canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-      canvasCtx.setLineDash([15, 10]); 
-      const boxX = w * 0.25;
-      const boxY = h * 0.2;
-      const boxW = w * 0.5;
-      const boxH = h * 0.5; 
-      canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
-      canvasCtx.setLineDash([]);
-      
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      canvasCtx.beginPath();
-      canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
-      canvasCtx.fill();
-      canvasCtx.font = "bold 16px sans-serif";
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      canvasCtx.textAlign = "center";
-      canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
+    if (videoRef.current) {
+      videoRef.current.addEventListener('loadeddata', renderLoop);
+    }
 
-      canvasCtx.font = "bold 20px sans-serif";
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
-      
-      // 🔥 新增：在畫布上顯示深度警告
-      if (isTrainingRef.current && depthWarning !== "") {
-        canvasCtx.font = "bold 24px sans-serif";
-        canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-        canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+    // 清理機制
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (videoRef.current) {
+        videoRef.current.removeEventListener('loadeddata', renderLoop);
+        if (videoRef.current.srcObject) {
+          videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+        }
       }
-      canvasCtx.restore();
-    });
-
-    const camera = new Camera(videoElement, { onFrame: async () => { await pose.send({ image: videoElement }); }, width: 1280, height: 720 });
-    camera.start();
-    return () => { camera.stop(); pose.close(); };
+      if (poseLandmarkerRef.current) {
+        poseLandmarkerRef.current.close();
+      }
+    };
   }, []);
 
   return (
