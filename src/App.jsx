@@ -281,9 +281,10 @@ function EmergencyCPR() {
 
   const currentStep = stepData[step];
 
+  // 🔥 修正：使用 h-[100dvh] 與 overflow-hidden 徹底防止手機網址列造成的上下滾動
   return (
-    <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
-      <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden">
+    <div className="bg-gray-100 h-[100dvh] overflow-hidden flex justify-center font-sans">
+      <div className="w-full max-w-md bg-white h-[100dvh] relative flex flex-col shadow-2xl overflow-hidden">
         <header className="flex items-center justify-between p-6 pt-12 bg-white">
           <button onClick={() => navigate('/')} className="w-12 h-12 flex items-center justify-center rounded-full border-2 border-gray-800 active:scale-90 transition-transform">
             <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
@@ -339,10 +340,8 @@ function EmergencyCPR() {
               </div>
             )}
 
-            {/* 步驟 D：操作 AED*/}
             {step === 3 && (
               <div className="flex flex-col gap-3">
-
                 <button 
                   onClick={() => { !isCalling ? navigate('/emergency-camera') : alert("請先完成或取消 119 通話！"); }} 
                   className={`${!isCalling ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'} px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-transform w-full`}
@@ -363,7 +362,6 @@ function EmergencyCPR() {
           </div>
         </main>
 
-        {/* 119 撥打區塊*/}
         {step < 2 && (
           <div className="absolute bottom-10 left-0 w-full px-6 flex justify-between gap-4">
             {!isCalling ? (
@@ -396,10 +394,12 @@ function EmergencyCamera() {
   
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0);
-  const [warningMsg, setWarningMsg] = useState("模型載入中，請稍候...");
+  const [warningMsg, setWarningMsg] = useState("模型載入中...");
   const [depthWarning, setDepthWarning] = useState(""); 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
+  const [facingMode, setFacingMode] = useState("environment"); 
+  const facingModeRef = useRef("environment"); 
 
   const isTrainingRef = useRef(false);
   const pressCountRef = useRef(0);
@@ -411,28 +411,59 @@ function EmergencyCamera() {
   const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
 
-  // 節拍器
+  const switchCamera = async () => {
+    const newMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(newMode);
+    facingModeRef.current = newMode;
+    
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+    }
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 1280, height: 720, facingMode: newMode } 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.error("切換鏡頭失敗:", err);
+      alert("無法切換鏡頭，請確認相機權限！");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(err => console.log(err));
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let interval;
-    if (isTraining) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      audioCtxRef.current = new AudioContext();
+    if (isTraining && audioCtxRef.current) {
       interval = setInterval(() => {
-        if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+        if (audioCtxRef.current.state === 'running') {
           const osc = audioCtxRef.current.createOscillator();
-          osc.connect(audioCtxRef.current.destination);
-          osc.frequency.value = 800;
-          osc.start();
+          const gainNode = audioCtxRef.current.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(800, audioCtxRef.current.currentTime);
+          
+          gainNode.gain.setValueAtTime(1, audioCtxRef.current.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtxRef.current.currentTime + 0.1);
+          
+          osc.connect(gainNode);
+          gainNode.connect(audioCtxRef.current.destination);
+          osc.start(audioCtxRef.current.currentTime);
           osc.stop(audioCtxRef.current.currentTime + 0.1);
         }
       }, (60 / TARGET_BPM) * 1000);
     }
-    return () => {
-      clearInterval(interval);
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-        audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
-      }
-    };
+    return () => clearInterval(interval);
   }, [isTraining]);
 
   useEffect(() => {
@@ -465,9 +496,16 @@ function EmergencyCamera() {
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
   };
 
   const handleStopEmergency = () => {
@@ -476,7 +514,6 @@ function EmergencyCamera() {
     navigate('/emergency', { state: { step: 3 } });
   };
 
-  // 🔥 初始化 Tasks API 與 Camera
   useEffect(() => {
     let lastVideoTime = -1;
     let canvasCtx = null;
@@ -495,10 +532,9 @@ function EmergencyCamera() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        setWarningMsg("請將急救者對準白色虛線框...");
+        setWarningMsg("請將雙方對準人體輪廓...");
         
-        // 啟動相機
-        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "environment" } })
           .then((stream) => {
             if (videoRef.current) {
               videoRef.current.srcObject = stream;
@@ -516,7 +552,6 @@ function EmergencyCamera() {
 
     initializeMediaPipe();
 
-    // 核心預測與渲染迴圈
     const renderLoop = () => {
       const videoElement = videoRef.current;
       const canvasElement = canvasRef.current;
@@ -539,39 +574,30 @@ function EmergencyCamera() {
 
           canvasCtx.save();
           canvasCtx.clearRect(0, 0, w, h);
-          canvasCtx.translate(w, 0);
-          canvasCtx.scale(-1, 1);
+          
+          if (facingModeRef.current === 'user') {
+            canvasCtx.translate(w, 0);
+            canvasCtx.scale(-1, 1);
+          }
+          
           canvasCtx.drawImage(videoElement, 0, 0, w, h);
 
           if (results.landmarks && results.landmarks.length > 0) {
             const landmarks = results.landmarks[0];
-            
-                     
             const TARGET_LANDMARKS = [11, 12, 13, 14, 15, 16, 23, 24];
-
             const UPPER_BODY_CONNECTIONS = [
-              { start: 11, end: 12 }, // 肩膀相連
-              { start: 11, end: 13 }, // 左肩到左手肘
-              { start: 13, end: 15 }, // 左手肘到左手腕
-              { start: 12, end: 14 }, // 右肩到右手肘
-              { start: 14, end: 16 }, // 右手肘到右手腕
-              { start: 11, end: 23 }, // 左肩到左髖部
-              { start: 12, end: 24 }, // 右肩到右髖部
-              { start: 23, end: 24 }  // 髖部相連
+              { start: 11, end: 12 }, { start: 11, end: 13 }, { start: 13, end: 15 },
+              { start: 12, end: 14 }, { start: 14, end: 16 }, { start: 11, end: 23 },
+              { start: 12, end: 24 }, { start: 23, end: 24 }
             ];
 
-       
             landmarks.forEach((lm, index) => {
-              if (!TARGET_LANDMARKS.includes(index)) {
-                if (lm) lm.visibility = 0; 
-              }
+              if (!TARGET_LANDMARKS.includes(index)) { if (lm) lm.visibility = 0; }
             });
 
             drawingUtils.drawConnectors(landmarks, UPPER_BODY_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-            
             const pointsToDraw = TARGET_LANDMARKS.map(index => landmarks[index]).filter(Boolean);
             drawingUtils.drawLandmarks(pointsToDraw, { color: '#FF0000', lineWidth: 2, radius: 3 });
-
 
             const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
             const re = landmarks[14]; 
@@ -591,16 +617,16 @@ function EmergencyCamera() {
                 depth_cm = depthPx * cmPerPx;
               }
 
-              const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
+              const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
 
               if (!isInTargetBox) {
-                setWarningMsg("請移至畫面中央的白色虛線框內");
+                setWarningMsg("請將雙方對準人體輪廓");
               } else {
                 let errors = [];
                 if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
                 if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
 
-                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好，請維持！");
+                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好維持！");
 
                 const currentShoulderY = midShoulder.y;
                 if (positionStateRef.current === "up") {
@@ -634,45 +660,85 @@ function EmergencyCamera() {
               }
 
               canvasCtx.beginPath();
-              canvasCtx.moveTo(w - midShoulder.x * w, midShoulder.y * h);
-              canvasCtx.lineTo(w - midWrist.x * w, midWrist.y * h);
+              canvasCtx.moveTo(midShoulder.x * w, midShoulder.y * h);
+              canvasCtx.lineTo(midWrist.x * w, midWrist.y * h);
               canvasCtx.strokeStyle = "#FFFF00";
               canvasCtx.lineWidth = 5;
               canvasCtx.stroke();
             }
           }
-          canvasCtx.restore();
+          canvasCtx.restore(); 
 
-          // UI 疊加層繪製
+          // 🔥 UI 疊加層繪製 (使用你微調過的完美比例與手臂畫法)
           canvasCtx.save();
-          canvasCtx.lineWidth = 4;
-          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-          canvasCtx.setLineDash([15, 10]);
-          const boxX = w * 0.25;
-          const boxY = h * 0.2;
-          const boxW = w * 0.5;
-          const boxH = h * 0.5;
-          canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
-          canvasCtx.setLineDash([]);
+          const S = h / 780; // 根據鏡頭畫面高度動態計算縮放比例
+          canvasCtx.lineWidth = 6 * S; 
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.5)"; 
+          canvasCtx.setLineDash([12 * S, 10 * S]); 
           
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
+          const centerX = w * 0.5;
+          const rescuerHeadY = h * 0.35; 
+          const patientY = rescuerHeadY + 300 * S; 
+          
+          // 1. 畫躺著的患者
           canvasCtx.beginPath();
-          canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
-          canvasCtx.fill();
-          canvasCtx.font = "bold 16px sans-serif";
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-          canvasCtx.textAlign = "center";
-          canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
-
-          canvasCtx.font = "bold 20px sans-serif";
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-          canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+          canvasCtx.arc(centerX - 130 * S, patientY, 42 * S, 0, 2 * Math.PI);
+          canvasCtx.stroke();
           
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(centerX - 85 * S, patientY - 26 * S);
+          canvasCtx.lineTo(centerX + 160 * S, patientY - 26 * S);
+          canvasCtx.moveTo(centerX - 85 * S, patientY + 26 * S);
+          canvasCtx.lineTo(centerX + 160 * S, patientY + 26 * S);
+          canvasCtx.stroke();
+
+          // 2. 畫施救者
+          canvasCtx.beginPath();
+          canvasCtx.arc(centerX, rescuerHeadY, 60 * S, 0, 2 * Math.PI);
+          canvasCtx.stroke();
+          
+          // 施救者身體外側/背部 (直直向下)
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(centerX - 50 * S, rescuerHeadY + 45 * S);
+          canvasCtx.lineTo(centerX - 90 * S, rescuerHeadY + 130 * S);
+          canvasCtx.lineTo(centerX - 90 * S, patientY - 26 * S); 
+          canvasCtx.moveTo(centerX + 50 * S, rescuerHeadY + 45 * S);
+          canvasCtx.lineTo(centerX + 90 * S, rescuerHeadY + 130 * S);
+          canvasCtx.lineTo(centerX + 90 * S, patientY - 26 * S);
+          canvasCtx.stroke();
+          
+          // 施救者手臂 (完美符合紅線的 V 字打直手臂)
+          canvasCtx.beginPath();
+          canvasCtx.lineWidth = 4 * Math.max(1, S); 
+          canvasCtx.moveTo(centerX - 90 * S, rescuerHeadY + 130 * S); // 從外緣轉折點出發
+          canvasCtx.lineTo(centerX - 10 * S, patientY - 26 * S);      // 連接至按壓點
+          canvasCtx.moveTo(centerX + 90 * S, rescuerHeadY + 130 * S); // 從外緣轉折點出發
+          canvasCtx.lineTo(centerX + 10 * S, patientY - 26 * S);      // 連接至按壓點
+          canvasCtx.stroke();
+
+          // 3. 畫按壓目標位置
+          canvasCtx.setLineDash([]); 
+          canvasCtx.fillStyle = "rgba(100, 255, 100, 0.6)"; 
+          canvasCtx.beginPath();
+          canvasCtx.arc(centerX, patientY, 28 * S, 0, 2 * Math.PI);
+          canvasCtx.fill();
+          
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+          canvasCtx.lineWidth = 4 * Math.max(1, S);
+          canvasCtx.stroke();
+
+          // 提示文字
+          canvasCtx.font = `bold ${18 * S}px sans-serif`;
+          canvasCtx.fillStyle = "rgba(255, 80, 80, 0.9)";
+          canvasCtx.textAlign = "center";
+          canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
+
           if (isTrainingRef.current && depthWarning !== "") {
-            canvasCtx.font = "bold 24px sans-serif";
+            canvasCtx.font = `bold ${26 * S}px sans-serif`;
             canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-            canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+            canvasCtx.fillText(depthWarning, centerX, patientY + 100 * S);
           }
+
           canvasCtx.restore();
         }
       }
@@ -683,7 +749,6 @@ function EmergencyCamera() {
       videoRef.current.addEventListener('loadeddata', renderLoop);
     }
 
-    // 清理機制
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
       if (videoRef.current) {
@@ -692,53 +757,71 @@ function EmergencyCamera() {
           videoRef.current.srcObject.getTracks().forEach(track => track.stop());
         }
       }
-      if (poseLandmarkerRef.current) {
-        poseLandmarkerRef.current.close();
-      }
+      if (poseLandmarkerRef.current) poseLandmarkerRef.current.close();
     };
   }, []);
 
   return (
-    <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
-      <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden">
-        <header className="flex items-center p-6 pt-12 bg-red-50 z-20 shadow-sm border-b-4 border-red-500">
-          <h1 className="flex-1 text-center text-xl font-black text-red-600 tracking-widest">緊急 CPR 輔助系統</h1>
-        </header>
+    <div className="bg-black h-[100dvh] overflow-hidden flex justify-center font-sans">
+      <div className="w-full max-w-md bg-black h-[100dvh] relative flex flex-col overflow-hidden">
         
-        <div className="flex justify-between items-center px-4 py-3 bg-red-50 z-20 shadow-md">
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-700 font-bold mb-1">目前速率</span>
-            <span className={`text-3xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-600' : 'text-red-500'}`}>
-              {bpm} <span className="text-sm font-medium text-gray-600">/分</span>
-            </span>
+        <video ref={videoRef} className="hidden" playsInline></video>
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
+
+        <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
+          <button 
+            onClick={() => navigate('/emergency', { state: { step: 2 } })} 
+            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+
+          <div className="pointer-events-auto bg-black/60 backdrop-blur-md rounded-2xl px-5 py-2 flex gap-5 text-white shadow-lg border border-white/10 mt-1">
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">速率</span>
+              <span className={`text-lg font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-400' : 'text-red-400'}`}>{bpm}</span>
+            </div>
+            <div className="w-px bg-white/20 my-1"></div>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">次數</span>
+              <span className="text-lg font-black text-blue-400">{pressCount}</span>
+            </div>
+            <div className="w-px bg-white/20 my-1"></div>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">換手</span>
+              <span className="text-lg font-black text-red-400 animate-pulse">{formatTime(timeLeft)}</span>
+            </div>
           </div>
-          <div className="w-px h-10 bg-red-200"></div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-700 font-bold mb-1">按壓次數</span>
-            <span className="text-3xl font-black text-blue-600">{pressCount}</span>
-          </div>
-          <div className="w-px h-10 bg-red-200"></div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-700 font-bold mb-1">換手倒數</span>
-            <span className="text-3xl font-black text-red-600 animate-pulse">{formatTime(timeLeft)}</span>
+          
+          <button 
+            onClick={switchCamera} 
+            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[80%] max-w-sm">
+          <div className={`px-4 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-bold shadow-lg text-white backdrop-blur-md transition-colors 
+            ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("良好") || warningMsg.includes("完美") ? 'bg-green-600/80' : 'bg-red-600/80'}`}>
+            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
+            <span className="tracking-wider">{warningMsg}</span>
           </div>
         </div>
 
-        <main className="flex-1 bg-black relative overflow-hidden flex flex-col">
-          <video ref={videoRef} className="hidden" playsInline></video>
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
-          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full flex items-center gap-3 shadow-lg transition-colors w-[85%] justify-center z-10 ${!isTraining ? 'bg-gray-600' : warningMsg.includes("良好") || warningMsg.includes("完美") ? 'bg-green-600' : 'bg-red-600'} bg-opacity-90 text-white backdrop-blur-sm`}>
-            <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
-            <span className="font-bold tracking-wider text-center">{warningMsg}</span>
-          </div>
-          <div className="absolute bottom-6 left-0 w-full px-6 flex flex-col gap-3 z-10">
-            {!isTraining ? (
-              <button onClick={handleStartEmergency} className="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">開始</button>
-            ) : (
-              <button onClick={handleStopEmergency} className="w-full bg-red-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">AED已抵達/暫停按壓</button>
-            )}
-          </div>
-        </main>
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[85%] max-w-sm z-20">
+          {!isTraining ? (
+            <button onClick={handleStartEmergency} className="w-full bg-blue-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-blue-400/30">
+              開始偵測
+            </button>
+          ) : (
+            <button onClick={handleStopEmergency} className="w-full bg-red-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-red-400/30">
+              AED已抵達 / 暫停按壓
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -757,10 +840,12 @@ function CPRPractice() {
   
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0); 
-  const [warningMsg, setWarningMsg] = useState("模型載入中，請稍候...");
+  const [warningMsg, setWarningMsg] = useState("模型載入中...");
   const [depthWarning, setDepthWarning] = useState(""); 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
+  const [facingMode, setFacingMode] = useState("environment");
+  const facingModeRef = useRef("environment"); 
 
   const isTrainingRef = useRef(false);
   const pressCountRef = useRef(0);
@@ -774,28 +859,59 @@ function CPRPractice() {
   
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 }); 
 
-  // 節拍器
+  const switchCamera = async () => {
+    const newMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(newMode);
+    facingModeRef.current = newMode;
+    
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+    }
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 1280, height: 720, facingMode: newMode } 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.error("切換鏡頭失敗:", err);
+      alert("無法切換鏡頭，請確認相機權限！");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(err => console.log(err));
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let interval;
-    if (isTraining) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      audioCtxRef.current = new AudioContext();
+    if (isTraining && audioCtxRef.current) {
       interval = setInterval(() => {
-        if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+        if (audioCtxRef.current.state === 'running') {
           const osc = audioCtxRef.current.createOscillator();
-          osc.connect(audioCtxRef.current.destination);
-          osc.frequency.value = 800;
-          osc.start();
+          const gainNode = audioCtxRef.current.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(800, audioCtxRef.current.currentTime);
+          
+          gainNode.gain.setValueAtTime(1, audioCtxRef.current.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtxRef.current.currentTime + 0.1);
+          
+          osc.connect(gainNode);
+          gainNode.connect(audioCtxRef.current.destination);
+          osc.start(audioCtxRef.current.currentTime);
           osc.stop(audioCtxRef.current.currentTime + 0.1);
         }
       }, (60 / TARGET_BPM) * 1000);
     }
-    return () => {
-      clearInterval(interval);
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-        audioCtxRef.current.close().catch(err => console.log("音效引擎已安全關閉", err));
-      }
-    };
+    return () => clearInterval(interval);
   }, [isTraining]);
 
   useEffect(() => {
@@ -828,9 +944,16 @@ function CPRPractice() {
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
   };
 
   const handleStopTraining = () => {
@@ -847,7 +970,6 @@ function CPRPractice() {
     navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy } });
   };
 
-  // 🔥 初始化 Tasks API 與 Camera
   useEffect(() => {
     let lastVideoTime = -1;
     let canvasCtx = null;
@@ -866,9 +988,9 @@ function CPRPractice() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        setWarningMsg("請將急救者對準白色虛線框...");
+        setWarningMsg("請將雙方對準人體輪廓...");
         
-        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } })
+        navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "environment" } })
           .then((stream) => {
             if (videoRef.current) {
               videoRef.current.srcObject = stream;
@@ -886,7 +1008,6 @@ function CPRPractice() {
 
     initializeMediaPipe();
 
-    // 核心預測與渲染迴圈
     const renderLoop = () => {
       const videoElement = videoRef.current;
       const canvasElement = canvasRef.current;
@@ -909,33 +1030,28 @@ function CPRPractice() {
 
           canvasCtx.save();
           canvasCtx.clearRect(0, 0, w, h);
-          canvasCtx.translate(w, 0);
-          canvasCtx.scale(-1, 1);
+          
+          if (facingModeRef.current === 'user') {
+            canvasCtx.translate(w, 0);
+            canvasCtx.scale(-1, 1);
+          }
+          
           canvasCtx.drawImage(videoElement, 0, 0, w, h);
 
           if (results.landmarks && results.landmarks.length > 0) {
             const landmarks = results.landmarks[0];
             const TARGET_LANDMARKS = [11, 12, 13, 14, 15, 16, 23, 24]
-
             const UPPER_BODY_CONNECTIONS = [
-              { start: 11, end: 12 }, // 肩膀相連
-              { start: 11, end: 13 }, // 左肩到左手肘
-              { start: 13, end: 15 }, // 左手肘到左手腕
-              { start: 12, end: 14 }, // 右肩到右手肘
-              { start: 14, end: 16 }, // 右手肘到右手腕
-              { start: 11, end: 23 }, // 左肩到左髖部
-              { start: 12, end: 24 }, // 右肩到右髖部
-              { start: 23, end: 24 }  // 髖部相連
+              { start: 11, end: 12 }, { start: 11, end: 13 }, { start: 13, end: 15 },
+              { start: 12, end: 14 }, { start: 14, end: 16 }, { start: 11, end: 23 },
+              { start: 12, end: 24 }, { start: 23, end: 24 }
             ];
 
             landmarks.forEach((lm, index) => {
-              if (!TARGET_LANDMARKS.includes(index)) {
-                if (lm) lm.visibility = 0; 
-              }
+              if (!TARGET_LANDMARKS.includes(index)) { if (lm) lm.visibility = 0; }
             });
 
             drawingUtils.drawConnectors(landmarks, UPPER_BODY_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-            
             const pointsToDraw = TARGET_LANDMARKS.map(index => landmarks[index]).filter(Boolean);
             drawingUtils.drawLandmarks(pointsToDraw, { color: '#FF0000', lineWidth: 2, radius: 3 });
 
@@ -944,13 +1060,6 @@ function CPRPractice() {
 
             if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
               const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-              
-              canvasCtx.beginPath();
-              canvasCtx.moveTo(midShoulder.x * w, midShoulder.y * h);
-              canvasCtx.lineTo(midWrist.x * w, midWrist.y * h);
-              canvasCtx.strokeStyle = "#FFFF00";
-              canvasCtx.lineWidth = 5;
-              canvasCtx.stroke();
               
               if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
                 baselineShoulderYRef.current = midShoulder.y;
@@ -964,10 +1073,10 @@ function CPRPractice() {
                 depth_cm = depthPx * cmPerPx;
               }
 
-              const isInTargetBox = midShoulder.x >= 0.25 && midShoulder.x <= 0.75 && midShoulder.y >= 0.2 && midShoulder.y <= 0.7;
+              const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
 
               if (!isInTargetBox) {
-                setWarningMsg("請移至畫面中央的白色虛線框內");
+                setWarningMsg("請將雙方對準人體輪廓");
               } else {
                 let errors = [];
                 if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
@@ -1015,40 +1124,87 @@ function CPRPractice() {
                 const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
                 if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
               }
+
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(midShoulder.x * w, midShoulder.y * h);
+              canvasCtx.lineTo(midWrist.x * w, midWrist.y * h);
+              canvasCtx.strokeStyle = "#FFFF00";
+              canvasCtx.lineWidth = 5;
+              canvasCtx.stroke();
             }
           }
           canvasCtx.restore();
 
-          // UI 疊加層繪製
+          // 🔥 UI 疊加層繪製 (使用你微調過的完美比例與手臂畫法)
           canvasCtx.save();
-          canvasCtx.lineWidth = 4;
-          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-          canvasCtx.setLineDash([15, 10]); 
-          const boxX = w * 0.25;
-          const boxY = h * 0.2;
-          const boxW = w * 0.5;
-          const boxH = h * 0.5; 
-          canvasCtx.strokeRect(boxX, boxY, boxW, boxH);
-          canvasCtx.setLineDash([]);
+          const S = h / 780; // 根據鏡頭畫面高度動態計算縮放比例
+          canvasCtx.lineWidth = 6 * S; 
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.5)"; 
+          canvasCtx.setLineDash([12 * S, 10 * S]); 
           
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.4)";
+          const centerX = w * 0.5;
+          const rescuerHeadY = h * 0.35; 
+          const patientY = rescuerHeadY + 300 * S; 
+          
+          // 1. 畫躺著的患者
           canvasCtx.beginPath();
-          canvasCtx.ellipse(w * 0.5, boxY + boxH - 20, 40, 20, 0, 0, 2 * Math.PI);
-          canvasCtx.fill();
-          canvasCtx.font = "bold 16px sans-serif";
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-          canvasCtx.textAlign = "center";
-          canvasCtx.fillText("病患位置", w * 0.5, boxY + boxH - 15);
-
-          canvasCtx.font = "bold 20px sans-serif";
-          canvasCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
-          canvasCtx.fillText("急救者請對準此框線", w * 0.5, boxY - 15);
+          canvasCtx.arc(centerX - 130 * S, patientY, 42 * S, 0, 2 * Math.PI);
+          canvasCtx.stroke();
           
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(centerX - 85 * S, patientY - 26 * S);
+          canvasCtx.lineTo(centerX + 160 * S, patientY - 26 * S);
+          canvasCtx.moveTo(centerX - 85 * S, patientY + 26 * S);
+          canvasCtx.lineTo(centerX + 160 * S, patientY + 26 * S);
+          canvasCtx.stroke();
+
+          // 2. 畫施救者
+          canvasCtx.beginPath();
+          canvasCtx.arc(centerX, rescuerHeadY, 60 * S, 0, 2 * Math.PI);
+          canvasCtx.stroke();
+          
+          // 施救者身體外側/背部 (直直向下)
+          canvasCtx.beginPath();
+          canvasCtx.moveTo(centerX - 50 * S, rescuerHeadY + 45 * S);
+          canvasCtx.lineTo(centerX - 90 * S, rescuerHeadY + 130 * S);
+          canvasCtx.lineTo(centerX - 90 * S, patientY - 26 * S); 
+          canvasCtx.moveTo(centerX + 50 * S, rescuerHeadY + 45 * S);
+          canvasCtx.lineTo(centerX + 90 * S, rescuerHeadY + 130 * S);
+          canvasCtx.lineTo(centerX + 90 * S, patientY - 26 * S);
+          canvasCtx.stroke();
+          
+          // 施救者手臂 (完美符合紅線的 V 字打直手臂)
+          canvasCtx.beginPath();
+          canvasCtx.lineWidth = 4 * Math.max(1, S); 
+          canvasCtx.moveTo(centerX - 90 * S, rescuerHeadY + 130 * S); // 從外緣轉折點出發
+          canvasCtx.lineTo(centerX - 10 * S, patientY - 26 * S);      // 連接至按壓點
+          canvasCtx.moveTo(centerX + 90 * S, rescuerHeadY + 130 * S); // 從外緣轉折點出發
+          canvasCtx.lineTo(centerX + 10 * S, patientY - 26 * S);      // 連接至按壓點
+          canvasCtx.stroke();
+
+          // 3. 畫按壓目標位置
+          canvasCtx.setLineDash([]); 
+          canvasCtx.fillStyle = "rgba(100, 255, 100, 0.6)"; 
+          canvasCtx.beginPath();
+          canvasCtx.arc(centerX, patientY, 28 * S, 0, 2 * Math.PI);
+          canvasCtx.fill();
+          
+          canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+          canvasCtx.lineWidth = 4 * Math.max(1, S);
+          canvasCtx.stroke();
+
+          // 提示文字
+          canvasCtx.font = `bold ${18 * S}px sans-serif`;
+          canvasCtx.fillStyle = "rgba(255, 80, 80, 0.9)";
+          canvasCtx.textAlign = "center";
+          canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
+
           if (isTrainingRef.current && depthWarning !== "") {
-            canvasCtx.font = "bold 24px sans-serif";
+            canvasCtx.font = `bold ${26 * S}px sans-serif`;
             canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-            canvasCtx.fillText(depthWarning, w * 0.5, boxY + 30);
+            canvasCtx.fillText(depthWarning, centerX, patientY + 100 * S);
           }
+
           canvasCtx.restore();
         }
       }
@@ -1059,7 +1215,6 @@ function CPRPractice() {
       videoRef.current.addEventListener('loadeddata', renderLoop);
     }
 
-    // 清理機制
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
       if (videoRef.current) {
@@ -1068,59 +1223,71 @@ function CPRPractice() {
           videoRef.current.srcObject.getTracks().forEach(track => track.stop());
         }
       }
-      if (poseLandmarkerRef.current) {
-        poseLandmarkerRef.current.close();
-      }
+      if (poseLandmarkerRef.current) poseLandmarkerRef.current.close();
     };
   }, []);
 
   return (
-    <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
-      <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden">
-        <header className="flex items-center p-6 pt-12 bg-indigo-50 z-20 shadow-sm">
-          <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm active:scale-90 transition-transform">
-            <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-          </button>
-          <h1 className="flex-1 text-center text-xl font-bold text-gray-800 mr-10">CPR練習</h1>
-        </header>
+    <div className="bg-black h-[100dvh] overflow-hidden flex justify-center font-sans">
+      <div className="w-full max-w-md bg-black h-[100dvh] relative flex flex-col overflow-hidden">
+        
+        <video ref={videoRef} className="hidden" playsInline></video>
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
 
-        <div className="flex justify-between items-center px-4 py-3 bg-indigo-50 z-20 shadow-md">
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-500 font-bold mb-1">目前速率</span>
-            <span className={`text-3xl font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-500' : 'text-indigo-500'}`}>
-              {bpm} <span className="text-sm font-medium text-gray-600">/分</span>
-            </span>
+        <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+
+          <div className="pointer-events-auto bg-black/60 backdrop-blur-md rounded-2xl px-5 py-2 flex gap-5 text-white shadow-lg border border-white/10 mt-1">
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">速率</span>
+              <span className={`text-lg font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-400' : 'text-indigo-400'}`}>{bpm}</span>
+            </div>
+            <div className="w-px bg-white/20 my-1"></div>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">次數</span>
+              <span className="text-lg font-black text-blue-400">{pressCount}</span>
+            </div>
+            <div className="w-px bg-white/20 my-1"></div>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] text-gray-300 font-medium">倒數</span>
+              <span className="text-lg font-black text-red-400">{formatTime(timeLeft)}</span>
+            </div>
           </div>
-          <div className="w-px h-10 bg-gray-300"></div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-500 font-bold mb-1">按壓次數</span>
-            <span className="text-3xl font-black text-blue-500">{pressCount}</span>
-          </div>
-          <div className="w-px h-10 bg-gray-300"></div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs text-gray-500 font-bold mb-1">練習倒數</span>
-            <span className="text-3xl font-black text-red-500">{formatTime(timeLeft)}</span>
+          
+          <button 
+            onClick={switchCamera} 
+            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[80%] max-w-sm">
+          <div className={`px-4 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-bold shadow-lg text-white backdrop-blur-md transition-colors 
+            ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("完美") ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
+            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
+            <span className="tracking-wider">{warningMsg}</span>
           </div>
         </div>
 
-        <main className="flex-1 bg-black relative overflow-hidden flex flex-col">
-          <video ref={videoRef} className="hidden" playsInline></video>
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
-            
-          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full flex items-center gap-3 shadow-lg transition-colors w-[85%] justify-center z-10
-            ${!isTraining ? 'bg-gray-600' : warningMsg.includes("完美") ? 'bg-green-500' : 'bg-red-500'} bg-opacity-90 text-white backdrop-blur-sm`}>
-            <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
-            <span className="font-bold tracking-wider text-center">{warningMsg}</span>
-          </div>
-
-          <div className="absolute bottom-6 left-0 w-full px-6 flex flex-col gap-3 z-10">
-            {!isTraining ? (
-              <button onClick={handleStartTraining} className="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">開始訓練</button>
-            ) : (
-              <button onClick={handleStopTraining} className="w-full bg-red-500 text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform">結束訓練並查看報告</button>
-            )}
-          </div>
-        </main>
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[85%] max-w-sm z-20">
+          {!isTraining ? (
+            <button onClick={handleStartTraining} className="w-full bg-blue-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-blue-400/30">
+              開始訓練
+            </button>
+          ) : (
+            <button onClick={handleStopTraining} className="w-full bg-red-500/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-red-400/30">
+              結束訓練並查看報告
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
