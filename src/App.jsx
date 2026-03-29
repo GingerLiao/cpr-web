@@ -484,6 +484,11 @@ function EmergencyCamera() {
   };
 
   const handleStartEmergency = () => {
+      // ✨ 新增：請求全螢幕
+    const element = document.documentElement;
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    }
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
@@ -509,6 +514,11 @@ function EmergencyCamera() {
   };
 
   const handleStopEmergency = () => {
+          // ✨ 新增：退出全螢幕
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+    
     setIsTraining(false);
     isTrainingRef.current = false;
     navigate('/emergency', { state: { step: 3 } });
@@ -931,6 +941,13 @@ function CPRPractice() {
   };
 
   const handleStartTraining = () => {
+      // ✨ 新增：請求全螢幕
+    const element = document.documentElement; // 取得整個網頁節點
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    } else if (element.webkitRequestFullscreen) { /* 支援 Safari */
+      element.webkitRequestFullscreen();
+    }
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
@@ -957,6 +974,10 @@ function CPRPractice() {
   };
 
   const handleStopTraining = () => {
+      // ✨ 新增：退出全螢幕
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
     setIsTraining(false);
     isTrainingRef.current = false;
     const now = new Date();
