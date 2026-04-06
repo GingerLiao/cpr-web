@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+// 🔥 新增：導入 Supabase 客戶端連線
+import { supabase } from './supabaseClient';
 
 // ==========================================
 // 共用數學公式與常數區
@@ -130,23 +132,52 @@ function AEDMap() {
           setErrorMsg("定位成功！正在下載衛福部全國 AED 資料庫...");
           
           try {
-            const targetUrl = encodeURIComponent('https://tw-aed.mohw.gov.tw/openData?t=json');
-            const response = await fetch(`https://api.allorigins.win/raw?url=${targetUrl}`);
-            if (!response.ok) throw new Error("伺服器沒有回應");
+            const { data, error } = await supabase
+              .from('AedLocation')
+              .select('*')
+              .limit(15000); 
+
+            if (error) throw error;
             
-            const data = await response.json();
             const processedAeds = data
-              .map(item => ({
-                id: item.ID,
-                name: item.PlaceName,
-                lat: parseFloat(item.AED_Lat),
-                lng: parseFloat(item.AED_Lng),
-                address: item.PlaceAddr,
-                time: item.OpenHours || "未提供開放時間"
-              }))
+              .map(item => {
+                // 1. 處理時間 (優先使用備註，若無備註則顯示平日時間)
+                const memo = item['開放使用時間備註'];
+                const wdStart = item['周一至周五起'];
+                const wdEnd = item['周一至周五迄'];
+                let timeStr = "未提供時間";
+                
+                if (memo && memo !== 'EMPTY' && memo.trim() !== '') {
+                  timeStr = memo; // 例如："24H" 或 "全時段開放"
+                } else if (wdStart && wdStart !== 'EMPTY') {
+                  // 擷取前五個字元，把 08:00:00 變成 08:00
+                  timeStr = `平日 ${wdStart.substring(0,5)}-${wdEnd.substring(0,5)}`;
+                }
+
+                // 2. 處理放置地點與描述
+                const placement = item['AED放置地點'] && item['AED放置地點'] !== 'EMPTY' ? item['AED放置地點'] : '';
+                const desc = item['場所描述'] && item['場所描述'] !== 'EMPTY' ? item['場所描述'] : '';
+                let detailInfo = placement;
+                if (desc) detailInfo += (detailInfo ? ` (${desc})` : desc);
+                if (!detailInfo) detailInfo = "無詳細位置資訊";
+
+                return {
+                  id: item['AEDID'] || item['場所ID'] || Math.random(), 
+                  name: item['場所名稱'],
+                  lat: parseFloat(item['地點LAT']), 
+                  lng: parseFloat(item['地點LNG']), 
+                  address: item['場所地址'],
+                  time: timeStr,
+                  detail: detailInfo // 🔥 新增詳細位置欄位
+                };
+              })
+              // 剔除沒有經緯度或轉換失敗的壞資料
               .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
+              // 計算每台 AED 與你的距離
               .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
+              // 效能優化：只留下距離你小於 3 公里 (3km) 的 AED
               .filter(aed => aed.distance < 3)
+              // 依照距離由近到遠排序
               .sort((a, b) => a.distance - b.distance);
             
             setNearbyAeds(processedAeds);
@@ -154,8 +185,8 @@ function AEDMap() {
             else setErrorMsg(null);
 
           } catch (error) {
-            console.error("API 串接失敗:", error);
-            setErrorMsg("無法連接衛福部資料庫，請稍後再試。");
+            console.error("Supabase 讀取失敗:", error);
+            setErrorMsg("無法連接您的專屬資料庫，請稍後再試。");
           }
         },
         (error) => { setErrorMsg("無法取得定位，請確認手機或瀏覽器是否允許 GPS 權限。"); },
@@ -199,6 +230,7 @@ function AEDMap() {
                   <Marker key={aed.id} position={[aed.lat, aed.lng]} icon={aedIcon}>
                     <Popup>
                       <b className="text-gray-800 text-sm">{aed.name}</b><br/>
+                      <span className="text-xs text-blue-600 font-bold block mt-1">📍 {aed.detail}</span>
                       <span className="text-xs text-gray-500 mt-1 block">{aed.address}</span>
                       <span className="text-xs font-bold text-green-600 block mt-1">🕒 {aed.time}</span>
                     </Popup>
@@ -225,6 +257,7 @@ function AEDMap() {
                       <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xs shrink-0">{index + 1}</div>
                       <div className="truncate">
                         <div className="font-bold text-gray-800 text-sm truncate">{aed.name}</div>
+                        <div className="text-xs text-blue-600 font-bold mt-0.5 truncate">📍 {aed.detail}</div>
                         <div className="text-xs text-gray-500 mt-0.5 truncate">{aed.address}</div>
                       </div>
                     </div>
@@ -973,8 +1006,8 @@ function CPRPractice() {
     source.start(0);
   };
 
-  const handleStopTraining = () => {
-      // ✨ 新增：退出全螢幕
+// 🔥 修改：改為 async，並將資料存入 Supabase
+  const handleStopTraining = async () => {
     if (document.fullscreenElement) {
       document.exitFullscreen();
     }
@@ -988,6 +1021,27 @@ function CPRPractice() {
     if (bpm >= 100 && bpm <= 120) accuracy = Math.floor(Math.random() * 10) + 90;
     else if (bpm === 0) accuracy = 0;
 
+    // 準備寫入資料庫的格式
+    const recordData = {
+      date: dateStr,
+      time: timeStr,
+      accuracy: accuracy,
+      count: pressCountRef.current,
+      bpm: bpm,
+      armBent: errorsLogRef.current.armBent,
+      notVertical: errorsLogRef.current.notVertical,
+      positionOffset: errorsLogRef.current.positionOffset
+    };
+
+    // 寫入 Supabase 資料庫
+    try {
+      await supabase.from('CprRecord').insert([recordData]);
+      console.log('成功儲存紀錄至雲端！');
+    } catch (error) {
+      console.error('儲存至 Supabase 失敗:', error);
+    }
+
+    // 跳轉到報告頁面
     navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy } });
   };
 
@@ -1464,12 +1518,38 @@ function CPRQuiz() {
     ]);
   };
 
-  const handleNextQuestion = () => {
+// 🔥 修改為 async，在最後一題寫入雲端
+  const handleNextQuestion = async () => {
     if (currentIndex < quizQuestions.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setSelectedOption(null);
       setShowExplanation(false);
     } else {
+      // 計算最終成績
+      const correctCount = userRecord.filter(r => r.userAns === r.correctAns).length;
+      const finalScore = Math.round((correctCount / quizQuestions.length) * 100);
+      
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
+      const timeStr = `${now.getHours() > 12 ? '下午' : '上午'}${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      // 準備寫入資料庫的格式
+      const recordData = {
+        date: dateStr,
+        time: timeStr,
+        score: finalScore,
+        correct: correctCount,
+        total: quizQuestions.length,
+        details: userRecord // 🔥 直接把整個陣列存成 JSONB！
+      };
+
+      try {
+        await supabase.from('QuizRecord').insert([recordData]);
+        console.log('題庫成績儲存成功！');
+      } catch (error) {
+        console.error('儲存題庫成績失敗:', error);
+      }
+
       setIsFinished(true);
     }
   };
@@ -1557,59 +1637,65 @@ function CPRQuiz() {
 }
 
 // ==========================================
-// 8. 歷史練習紀錄頁 (HistoryRecord)
+// 8. 歷史練習紀錄頁 (HistoryRecord) - 🔥 即時讀取 Supabase 版
 // ==========================================
 function HistoryRecord() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('quiz');
   const [selectedQuiz, setSelectedQuiz] = useState(null);
 
-  const quizHistory = [
-    { 
-      id: 1, date: '2026/01/29', time: '下午02:15', score: 72, correct: 18, total: 25,
-      details: [
-        {
-          question: "關於成人高品質胸部按壓的描述，下列敘述何者正確？",
-          options: [ { key: "A", text: "以 4 公分深度無干擾的按壓" }, { key: "B", text: "胸部按壓但不須通氣" }, { key: "C", text: "按壓速率低於100 次/分鐘或高於 120 次/分鐘" }, { key: "D", text: "須讓胸部完全回彈" } ],
-          userAns: "B", correctAns: "D",
-          explanation: "(A) 錯誤：應為 5 至 6 公分。\n(B) 錯誤：包含通氣。\n(C) 錯誤：100 至 120 次。\n(D) 正確：須讓胸部完全回彈。"
-        },
-        {
-          question: "AED電擊一次之後，下一步應如何處置？",
-          options: [ { key: "A", text: "讓AED再分析一次心律" }, { key: "B", text: "檢查脈搏是否恢復" }, { key: "C", text: "立刻給予30:2循環之CPR" }, { key: "D", text: "移除AED，等待救護人員" } ],
-          userAns: "C", correctAns: "C",
-          explanation: "AED電擊完，應立即給予壓胸30:2循環之CPR，兩分鐘後AED 會自動再分析心律。"
-        }
-      ]
-    },
-    { 
-      id: 2, date: '2025/12/13', time: '下午05:10', score: 58, correct: 11, total: 20,
-      details: [
-        {
-          question: "只有單一人時，下列何種情況，應先急救2 分鐘再去求救？",
-          options: [ { key: "A", text: "溺水" }, { key: "B", text: "藥物中毒" }, { key: "C", text: "創傷病人" }, { key: "D", text: "以上皆是" } ],
-          userAns: "A", correctAns: "D",
-          explanation: "小兒、溺水、創傷及藥物中毒常見的CPR原因是呼吸道的問題，先打開呼吸道說不定就能改善問題，所以要先急救後再去求救。"
-        }
-      ]
-    }
-  ];
-  
-  const cprHistory = [
-    { id: 1, date: '2026/01/26', time: '下午06:54', accuracy: 82, count: 250, bpm: 108, errors: { armBent: 5, notVertical: 4, positionOffset: 2 } },
-    { id: 2, date: '2025/12/15', time: '下午08:07', accuracy: 85, count: 300, bpm: 114, errors: { armBent: 8, notVertical: 5, positionOffset: 8 } },
-    { id: 3, date: '2025/12/10', time: '下午02:10', accuracy: 70, count: 210, bpm: 95, errors: { armBent: 12, notVertical: 10, positionOffset: 5 } },
-    { id: 4, date: '2025/11/25', time: '上午10:30', accuracy: 92, count: 320, bpm: 110, errors: { armBent: 2, notVertical: 1, positionOffset: 1 } },
-    { id: 5, date: '2025/11/12', time: '下午04:20', accuracy: 65, count: 180, bpm: 88, errors: { armBent: 15, notVertical: 12, positionOffset: 8 } },
-    { id: 6, date: '2025/10/30', time: '上午09:15', accuracy: 88, count: 280, bpm: 115, errors: { armBent: 4, notVertical: 3, positionOffset: 2 } },
-    { id: 7, date: '2025/10/18', time: '下午07:45', accuracy: 78, count: 240, bpm: 102, errors: { armBent: 7, notVertical: 6, positionOffset: 4 } },
-    { id: 8, date: '2025/10/05', time: '下午01:30', accuracy: 95, count: 350, bpm: 118, errors: { armBent: 1, notVertical: 0, positionOffset: 0 } },
-    { id: 9, date: '2025/09/22', time: '上午11:00', accuracy: 60, count: 150, bpm: 85, errors: { armBent: 18, notVertical: 15, positionOffset: 10 } },
-    { id: 10, date: '2025/09/10', time: '下午03:50', accuracy: 80, count: 260, bpm: 105, errors: { armBent: 6, notVertical: 5, positionOffset: 3 } },
-  ];
+  // 🔥 狀態管理：同時管理 CPR 和 Quiz 歷史
+  const [cprHistory, setCprHistory] = useState([]);
+  const [quizHistory, setQuizHistory] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isQuizLoading, setIsQuizLoading] = useState(true);
 
-  const chartData = [...cprHistory].reverse(); 
-  const pointsString = chartData.map((d, i) => `${i * (100 / 9)},${100 - d.accuracy}`).join(' ');
+  // 🔥 同時抓取兩種雲端紀錄
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        // 抓取 CPR 紀錄
+        const { data: cprData, error: cprError } = await supabase
+          .from('CprRecord')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!cprError && cprData) {
+          setCprHistory(cprData.map(item => ({
+            id: item.id, date: item.date, time: item.time,
+            accuracy: item.accuracy, count: item.count, bpm: item.bpm,
+            errors: { armBent: item.armBent, notVertical: item.notVertical, positionOffset: item.positionOffset, notDeepEnough: 0 }
+          })));
+        }
+
+        // 抓取 題庫 紀錄
+        const { data: quizData, error: quizError } = await supabase
+          .from('QuizRecord')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!quizError && quizData) {
+          setQuizHistory(quizData.map(item => ({
+            id: item.id, date: item.date, time: item.time,
+            score: item.score, correct: item.correct, total: item.total,
+            details: item.details // 剛剛整包存進去的 JSON
+          })));
+        }
+      } catch (error) {
+        console.error("獲取歷史紀錄失敗:", error);
+      } finally {
+        setIsLoading(false);
+        setIsQuizLoading(false);
+      }
+    };
+
+    fetchRecords();
+  }, []);
+
+  // 折線圖繪圖邏輯：取最新 10 筆並反轉順序 (從左至右為舊到新)
+  const chartData = [...cprHistory].slice(0, 10).reverse(); 
+  const xStep = chartData.length > 1 ? 100 / (chartData.length - 1) : 100;
+  const pointsString = chartData.map((d, i) => `${i * xStep},${100 - d.accuracy}`).join(' ');
 
   if (selectedQuiz) {
     return (
@@ -1682,90 +1768,123 @@ function HistoryRecord() {
         </div>
 
         <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
+          
+          {/* 🔥 來自 Supabase 的真實題庫紀錄 */}
           {activeTab === 'quiz' && (
             <div className="animate-fade-in">
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 flex items-center justify-between">
-                <div>
-                  <h2 className="text-gray-500 font-bold text-sm mb-1">總題庫完成率</h2>
-                  <div className="text-sm font-bold text-gray-800">題數: 15 / 20</div>
-                </div>
-                <div className="w-16 h-16 rounded-full border-4 border-blue-500 flex items-center justify-center">
-                  <span className="font-black text-blue-600 text-xl">75%</span>
-                </div>
-              </div>
-              <h3 className="font-bold text-gray-800 mb-3 ml-1">過去測驗紀錄 (點擊查看)</h3>
-              <div className="space-y-3">
-                {quizHistory.map((record) => (
-                  <div key={record.id} onClick={() => setSelectedQuiz(record)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center active:scale-95 transition-transform cursor-pointer hover:border-blue-300">
-                    <div>
-                      <div className="font-bold text-gray-800">{record.date}</div>
-                      <div className="text-sm text-gray-500">{record.time}</div>
-                    </div>
-                    <div className={`text-2xl font-black ${record.score >= 70 ? 'text-green-500' : 'text-orange-500'}`}>
-                      {record.score} <span className="text-sm font-medium text-gray-500">分</span>
-                    </div>
+              {/* 如果有紀錄，計算一下總完成率 (可以抓最新一次的題數) */}
+              {quizHistory.length > 0 && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-gray-500 font-bold text-sm mb-1">最近一次完成狀況</h2>
+                    <div className="text-sm font-bold text-gray-800">題數: {quizHistory[0].correct} / {quizHistory[0].total}</div>
                   </div>
-                ))}
+                  <div className="w-16 h-16 rounded-full border-4 border-blue-500 flex items-center justify-center">
+                    <span className="font-black text-blue-600 text-xl">{quizHistory[0].score}%</span>
+                  </div>
+                </div>
+              )}
+
+              <h3 className="font-bold text-gray-800 mb-3 ml-1">過去測驗紀錄 (點擊查看詳細)</h3>
+              <div className="space-y-3">
+                {isQuizLoading ? (
+                  <p className="text-center text-gray-400 text-sm py-4">資料載入中...</p>
+                ) : quizHistory.length > 0 ? (
+                  quizHistory.map((record) => (
+                    <div key={record.id} onClick={() => setSelectedQuiz(record)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center active:scale-95 transition-transform cursor-pointer hover:border-blue-300">
+                      <div>
+                        <div className="font-bold text-gray-800">{record.date}</div>
+                        <div className="text-sm text-gray-500">{record.time}</div>
+                      </div>
+                      <div className={`text-2xl font-black ${record.score >= 70 ? 'text-green-500' : 'text-orange-500'}`}>
+                        {record.score} <span className="text-sm font-medium text-gray-500">分</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 py-8">目前沒有測驗紀錄，快去考一張吧！</div>
+                )}
               </div>
             </div>
           )}
 
+          {/* 🔥 來自 Supabase 的真實 CPR 紀錄列表與動態折線圖 */}
           {activeTab === 'cpr' && (
             <div className="animate-fade-in">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
-                 <h4 className="text-gray-700 font-bold mb-6">最近 10 次練習分析 (準確率)</h4>
-                 <div className="w-full relative h-32">
-                   <svg viewBox="0 -10 100 120" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                     <defs>
-                       <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                         <stop offset="0%" stopColor="#f97316" stopOpacity="0.3"/>
-                         <stop offset="100%" stopColor="#f97316" stopOpacity="0.0"/>
-                       </linearGradient>
-                     </defs>
-                     <polygon points={`0,100 ${pointsString} 100,100`} fill="url(#chartGradient)" />
-                     <polyline points={pointsString} fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                     {chartData.map((d, i) => (
-                       <g key={d.id} className="group cursor-pointer">
-                         <circle cx={i * (100 / 9)} cy={100 - d.accuracy} r="2.5" fill="#fff" stroke="#f97316" strokeWidth="1.5" />
-                         <text x={i * (100 / 9)} y={100 - d.accuracy - 8} fontSize="5" fill="#4b5563" textAnchor="middle" className="font-bold opacity-0 group-hover:opacity-100 transition-opacity">{d.accuracy}%</text>
-                       </g>
-                     ))}
-                   </svg>
-                 </div>
-                 <div className="flex justify-between mt-4">
-                   <span className="text-[10px] text-gray-400">{chartData[0].date.slice(5)}</span>
-                   <span className="text-[10px] text-gray-400">{chartData[4].date.slice(5)}</span>
-                   <span className="text-[10px] text-gray-400">{chartData[9].date.slice(5)}</span>
-                 </div>
+                 <h4 className="text-gray-700 font-bold mb-6">最近練習分析 (準確率)</h4>
+                 
+                 {isLoading ? (
+                   <div className="w-full h-32 flex flex-col items-center justify-center text-gray-400">
+                     <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                     資料載入中...
+                   </div>
+                 ) : chartData.length > 0 ? (
+                   <>
+                     <div className="w-full relative h-32">
+                       <svg viewBox="0 -10 100 120" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                         <defs>
+                           <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="0%" stopColor="#f97316" stopOpacity="0.3"/>
+                             <stop offset="100%" stopColor="#f97316" stopOpacity="0.0"/>
+                           </linearGradient>
+                         </defs>
+                         <polygon points={`0,100 ${pointsString} 100,100`} fill="url(#chartGradient)" />
+                         <polyline points={pointsString} fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                         {chartData.map((d, i) => (
+                           <g key={d.id} className="group cursor-pointer">
+                             <circle cx={i * xStep} cy={100 - d.accuracy} r="2.5" fill="#fff" stroke="#f97316" strokeWidth="1.5" />
+                             <text x={i * xStep} y={100 - d.accuracy - 8} fontSize="5" fill="#4b5563" textAnchor="middle" className="font-bold opacity-0 group-hover:opacity-100 transition-opacity">{d.accuracy}%</text>
+                           </g>
+                         ))}
+                       </svg>
+                     </div>
+                     <div className="flex justify-between mt-4">
+                       <span className="text-[10px] text-gray-400">{chartData[0]?.date.slice(5)}</span>
+                       {chartData.length > 2 && <span className="text-[10px] text-gray-400">{chartData[Math.floor(chartData.length/2)]?.date.slice(5)}</span>}
+                       {chartData.length > 1 && <span className="text-[10px] text-gray-400">{chartData[chartData.length - 1]?.date.slice(5)}</span>}
+                     </div>
+                   </>
+                 ) : (
+                   <div className="w-full h-32 flex items-center justify-center text-gray-400 font-bold">
+                     尚無雲端練習紀錄
+                   </div>
+                 )}
               </div>
 
               <h3 className="font-bold text-gray-800 mb-3 ml-1">練習紀錄列表 (點擊查看)</h3>
               <div className="space-y-4">
-                {cprHistory.map((record) => (
-                  <div 
-                    key={record.id} 
-                    onClick={() => navigate('/report', { state: { finalBpm: record.bpm, totalPresses: record.count, errors: record.errors, date: record.date, time: record.time, accuracy: record.accuracy } })}
-                    className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 cursor-pointer hover:border-blue-300 active:scale-95 transition-transform"
-                  >
-                    <div className="text-sm font-bold text-gray-500 border-b pb-2 mb-3">{record.date} {record.time}</div>
-                    <div className="flex justify-between items-center">
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 font-bold mb-1">準確率</div>
-                        <div className="text-xl font-black text-indigo-600">{record.accuracy}%</div>
-                      </div>
-                      <div className="w-px h-8 bg-gray-200"></div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 font-bold mb-1">按壓次數</div>
-                        <div className="text-xl font-black text-gray-800">{record.count}</div>
-                      </div>
-                      <div className="w-px h-8 bg-gray-200"></div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 font-bold mb-1">頻率</div>
-                        <div className="text-xl font-black text-green-500">{record.bpm}<span className="text-xs text-gray-500">BPM</span></div>
+                {isLoading ? (
+                  <p className="text-center text-gray-400 text-sm">請稍候...</p>
+                ) : cprHistory.length > 0 ? (
+                  cprHistory.map((record) => (
+                    <div 
+                      key={record.id} 
+                      onClick={() => navigate('/report', { state: { finalBpm: record.bpm, totalPresses: record.count, errors: record.errors, date: record.date, time: record.time, accuracy: record.accuracy } })}
+                      className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 cursor-pointer hover:border-blue-300 active:scale-95 transition-transform"
+                    >
+                      <div className="text-sm font-bold text-gray-500 border-b pb-2 mb-3">{record.date} {record.time}</div>
+                      <div className="flex justify-between items-center">
+                        <div className="text-center">
+                          <div className="text-xs text-gray-400 font-bold mb-1">準確率</div>
+                          <div className="text-xl font-black text-indigo-600">{record.accuracy}%</div>
+                        </div>
+                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-400 font-bold mb-1">按壓次數</div>
+                          <div className="text-xl font-black text-gray-800">{record.count}</div>
+                        </div>
+                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-400 font-bold mb-1">頻率</div>
+                          <div className="text-xl font-black text-green-500">{record.bpm}<span className="text-xs text-gray-500">BPM</span></div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="text-center text-gray-400 py-8">目前還沒有任何紀錄，快去練習一次吧！</div>
+                )}
               </div>
             </div>
           )}
