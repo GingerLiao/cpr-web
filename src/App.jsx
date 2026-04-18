@@ -1,10 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 // 🔥 新增：導入 Supabase 客戶端連線
 import { supabase } from './supabaseClient';
+import Login from './Login';
 
 // ==========================================
 // 共用數學公式與常數區
@@ -58,6 +59,16 @@ const aedIcon = L.divIcon({
 // ==========================================
 function Home() {
   const navigate = useNavigate();
+  const handleLogout = async () => {
+  // 1. 登出 Supabase 會員
+  await supabase.auth.signOut();
+  
+  // 2. 清除訪客標記
+  localStorage.removeItem('isGuest');
+  
+  // 3. 強制跳轉回登入頁面
+  window.location.href = "/login";
+};
 
   return (
     <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
@@ -96,6 +107,20 @@ function Home() {
             </button>
           </div>
         </main>
+
+        {/* 🔥 新增：最下方的登出按鈕區 */}
+        <footer className="p-6 pb-10 flex justify-center">
+          <button 
+            onClick={handleLogout}
+            className="text-gray-400 text-sm font-medium hover:text-red-500 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            登出系統
+          </button>
+        </footer>
+        
       </div>
     </div>
   );
@@ -1898,17 +1923,60 @@ function HistoryRecord() {
 // 總路由設定
 // ==========================================
 function App() {
+  // 建立兩個狀態：一個存 Supabase 會員，一個存訪客標記
+  const [session, setSession] = useState(null);
+  const [isGuest, setIsGuest] = useState(() => {
+    return localStorage.getItem('isGuest') === 'true';
+  });
+  const [loading, setLoading] = useState(true); // 💡 新增一個「載入中」狀態
+  
+  useEffect(() => {
+    // 1. 檢查目前的正式登入狀態
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false); // 檢查完畢
+    });
+
+    // 2. 監聽登入/登出事件 (例如使用者點了驗證信)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // 3. 檢查本地有沒有訪客標記
+    const guestStatus = localStorage.getItem('isGuest') === 'true';
+    setIsGuest(guestStatus);
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // 💡 關鍵：如果還在檢查狀態中，先不要做任何導向，顯示一個簡單的轉圈圈或空白
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center">載入中...</div>;
+  }
+
+  // 判斷是否「有權限」進入 App (正式會員或訪客皆可)
+  const hasAccess = session || isGuest;
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/aed" element={<AEDMap />} />
-        <Route path="/practice" element={<CPRPractice />} />
-        <Route path="/report" element={<CPRReport />} />
-        <Route path="/quiz" element={<CPRQuiz />} />
-        <Route path="/history" element={<HistoryRecord />} /> 
-        <Route path="/emergency" element={<EmergencyCPR />} />
-        <Route path="/emergency-camera" element={<EmergencyCamera />} />
+        {/* 登入路徑不需要保護 */}
+        <Route path="/login" element={<Login />} />
+
+        {/* 
+           🏠 保護路徑：
+           如果 hasAccess 是 true，就顯示頁面；
+           如果 false，就用 <Navigate /> 踢回登入頁。
+        */}
+        <Route path="/" element={hasAccess ? <Home /> : <Navigate to="/login" />} />
+        <Route path="/aed" element={hasAccess ? <AEDMap /> : <Navigate to="/login" />} />
+        <Route path="/practice" element={hasAccess ? <CPRPractice /> : <Navigate to="/login" />} />
+        <Route path="/report" element={hasAccess ? <CPRReport /> : <Navigate to="/login" />} />
+        <Route path="/quiz" element={hasAccess ? <CPRQuiz /> : <Navigate to="/login" />} />
+        <Route path="/history" element={hasAccess ? <HistoryRecord /> : <Navigate to="/login" />} /> 
+        <Route path="/emergency" element={hasAccess ? <EmergencyCPR /> : <Navigate to="/login" />} />
+        <Route path="/emergency-camera" element={hasAccess ? <EmergencyCamera /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );
