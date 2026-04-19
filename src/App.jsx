@@ -10,7 +10,6 @@ import Login from './Login';
 // ==========================================
 // 共用數學公式與常數區
 // ==========================================
-const FOREARM_LENGTH_CM = 25.0; // 設定前臂長度為 25 公分做為比例尺
 const TARGET_BPM = 110; // 目標節拍器頻率
 
 function calculateAngle(a, b, c) {
@@ -276,7 +275,7 @@ function AEDMap() {
             </h2>
             <div className="space-y-3 mb-5 overflow-y-auto max-h-[30vh] pr-2">
               {nearbyAeds.length > 0 ? (
-                nearbyAeds.slice(0, 5).map((aed, index) => (
+                nearbyAeds.map((aed, index) => (
                   <div key={aed.id} className="flex justify-between items-center border border-gray-100 p-3 rounded-xl bg-gray-50">
                     <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
                       <div className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xs shrink-0">{index + 1}</div>
@@ -465,10 +464,14 @@ function EmergencyCamera() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
+  const highestWristYRef = useRef(10000);
+  const lowestWristYRef = useRef(0.0);   
   const baselineShoulderYRef = useRef(null); 
   const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
-
+  const lastWarningTimeRef = useRef(0); 
+  const lastPressTimeRef = useRef(0);
+  const depthWarningRef = useRef("");
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
     setFacingMode(newMode);
@@ -556,6 +559,7 @@ function EmergencyCamera() {
     setTimeLeft(120); 
     setWarningMsg("請開始按壓！");
     setDepthWarning("");
+    depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
@@ -677,54 +681,80 @@ function EmergencyCamera() {
                 baselineShoulderYRef.current = midShoulder.y;
               }
               
-              let depth_cm = 0.0;
-              const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
-              if (forearmPxLen > 0) {
-                const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
-                const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
-                depth_cm = depthPx * cmPerPx;
-              }
 
               const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
-
+              const now = Date.now();
               if (!isInTargetBox) {
-                setWarningMsg("請將雙方對準人體輪廓");
+                if (now - lastWarningTimeRef.current > 500) {
+                  setWarningMsg("請將雙方對準人體輪廓");
+                  lastWarningTimeRef.current = now;
+                }
               } else {
                 let errors = [];
                 if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
                 if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
 
-                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢良好維持！");
+                // 宣告 newMsg 變數，解決崩潰問題
+                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢良好維持！";
+                
+                // 2. 有對準時的提示，加入 0.5 秒節流防卡死
+                if (now - lastWarningTimeRef.current > 500) {
+                  setWarningMsg(newMsg);
+                  lastWarningTimeRef.current = now;
+                }
 
                 const currentShoulderY = midShoulder.y;
+                const currentWristY = midWrist.y * h;
+                const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
+
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
+
                   if (currentShoulderY > highestYRef.current + threshold) { 
                     positionStateRef.current = "down"; 
                     lowestYRef.current = currentShoulderY; 
-                    currentPressMaxDepthRef.current = 0.0; 
+                    lowestWristYRef.current = currentWristY;
                   }
                 } else if (positionStateRef.current === "down") {
-                  if (depth_cm > currentPressMaxDepthRef.current) {
-                    currentPressMaxDepthRef.current = depth_cm;
-                  }
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+                  if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
+
+                  // 往下壓再回彈 (完成一次按壓)
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    pressCountRef.current += 1;
-                    setPressCount(pressCountRef.current);
                     highestYRef.current = currentShoulderY;
+                    highestWristYRef.current = currentWristY;
                     
-                    if (currentPressMaxDepthRef.current < 5.0) {
-                      setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
-                    } else {
-                      setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    // 防連點機制 (250毫秒)
+                    if (now - lastPressTimeRef.current > 250) { 
+                        lastPressTimeRef.current = now; 
+                        
+                        pressCountRef.current += 1;
+                        setPressCount(pressCountRef.current);
+
+                        // EmergencyCamera 深度判斷
+                        let pressDepth = lowestWristYRef.current - highestWristYRef.current;
+                        let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
+                        
+                        let msg = "";
+                        if (ratio < 0.10){
+                          msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
+                        } else {
+                          msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
+                        }
+                        setDepthWarning(msg);
+                        depthWarningRef.current = msg; 
+
+                        const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+                        if (elapsedTime > 3) {
+                           setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+                        }
                     }
                   }
                 }
 
-                const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-                if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+                
               }
 
               canvasCtx.beginPath();
@@ -801,12 +831,11 @@ function EmergencyCamera() {
           canvasCtx.textAlign = "center";
           canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
 
-          if (isTrainingRef.current && depthWarning !== "") {
+          if (isTrainingRef.current && depthWarningRef.current !== "") {
             canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-            canvasCtx.fillText(depthWarning, centerX, patientY + 100 * S);
+            canvasCtx.fillStyle = depthWarningRef.current.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
           }
-
           canvasCtx.restore();
         }
       }
@@ -924,7 +953,11 @@ function CPRPractice() {
   const baselineShoulderYRef = useRef(null); 
   const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
-  
+  const highestWristYRef = useRef(10000);
+  const lowestWristYRef = useRef(0.0);   
+  const lastWarningTimeRef = useRef(0); 
+  const lastPressTimeRef = useRef(0);
+  const depthWarningRef = useRef("");
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 }); 
 
   const switchCamera = async () => {
@@ -1016,6 +1049,7 @@ function CPRPractice() {
     setTimeLeft(120);
     setWarningMsg("請開始按壓！");
     setDepthWarning("");
+    depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
     
@@ -1165,64 +1199,88 @@ function CPRPractice() {
                 baselineShoulderYRef.current = midShoulder.y;
               }
               
-              let depth_cm = 0.0;
-              const forearmPxLen = Math.hypot((rw.x - re.x) * w, (rw.y - re.y) * h);
-              if (forearmPxLen > 0) {
-                const cmPerPx = FOREARM_LENGTH_CM / forearmPxLen;
-                const depthPx = (midShoulder.y - baselineShoulderYRef.current) * h;
-                depth_cm = depthPx * cmPerPx;
-              }
 
               const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
-
-              if (!isInTargetBox) {
-                setWarningMsg("請將雙方對準人體輪廓");
+              const now= Date.now();
+             if (!isInTargetBox) {
+                if (now - lastWarningTimeRef.current > 500) {
+                  setWarningMsg("請將雙方對準人體輪廓");
+                  lastWarningTimeRef.current = now;
+                }
               } else {
                 let errors = [];
-                if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) {
-                  errors.push("手肘請打直");
-                  errorsLogRef.current.armBent += 1;
-                }
-                if (centerVertAngle < 80 || centerVertAngle > 100) {
-                  errors.push("重心未垂直");
-                  errorsLogRef.current.notVertical += 1;
-                }
-                if (Math.abs(midWrist.x - midShoulder.x) > 0.15) {
-                  errorsLogRef.current.positionOffset += 1;
-                }
+                // 🔥 將布林值抽出來，才不會發生 reference error
+                let isArmBent = calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160;
+                let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
+                let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
 
-                setWarningMsg(errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！");
+                if (isArmBent) errors.push("手肘請打直");
+                if (isNotVertical) errors.push("重心未垂直");
+
+                // 宣告 newMsg 變數
+                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！";
+
+                // 2. 有對準時的提示，加入 0.5 秒節流防卡死
+                if (now - lastWarningTimeRef.current > 500) {
+                  setWarningMsg(newMsg);
+                  lastWarningTimeRef.current = now;
+                }
 
                 const currentShoulderY = midShoulder.y;
+                const currentWristY = midWrist.y * h;
+                const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
+
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
+
                   if (currentShoulderY > highestYRef.current + threshold) { 
                     positionStateRef.current = "down"; 
                     lowestYRef.current = currentShoulderY; 
-                    currentPressMaxDepthRef.current = 0.0;
+                    lowestWristYRef.current = currentWristY;
                   }
                 } else if (positionStateRef.current === "down") {
-                  if (depth_cm > currentPressMaxDepthRef.current) {
-                    currentPressMaxDepthRef.current = depth_cm;
-                  }
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+                  if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
+
+                  // 往下壓再回彈 (完成一次按壓)
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    pressCountRef.current += 1;
-                    setPressCount(pressCountRef.current); 
                     highestYRef.current = currentShoulderY;
-                    
-                    if (currentPressMaxDepthRef.current < 5.0) {
-                      errorsLogRef.current.notDeepEnough += 1;
-                      setDepthWarning(`深度不足! (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
-                    } else {
-                      setDepthWarning(`深度良好 (${currentPressMaxDepthRef.current.toFixed(1)}cm)`);
+                    highestWristYRef.current = currentWristY;
+
+                    // 防連點機制 (250毫秒)
+                    if (now - lastPressTimeRef.current > 250) { 
+                        lastPressTimeRef.current = now; 
+                        
+                        pressCountRef.current += 1;
+                        setPressCount(pressCountRef.current); 
+
+                        // 🔥 確保在按壓完成時才紀錄錯誤次數，避免一秒加60次
+                        if (isArmBent) errorsLogRef.current.armBent += 1;
+                        if (isNotVertical) errorsLogRef.current.notVertical += 1;
+                        if (isOffset) errorsLogRef.current.positionOffset += 1;
+
+                        let pressDepth = lowestWristYRef.current - highestWristYRef.current;
+                        let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
+
+                        let msg = "";
+                        if (ratio < 0.10){
+                          errorsLogRef.current.notDeepEnough += 1;
+                          msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
+                        } else {
+                          msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
+                        }
+                        setDepthWarning(msg);
+                        depthWarningRef.current = msg;
+                        
+                        const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+                        if (elapsedTime > 3) {
+                           setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+                        }
                     }
                   }
                 }
-
-                const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-                if (elapsedTime > 3 && pressCountRef.current > 0) setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
               }
 
               canvasCtx.beginPath();
@@ -1299,10 +1357,10 @@ function CPRPractice() {
           canvasCtx.textAlign = "center";
           canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
 
-          if (isTrainingRef.current && depthWarning !== "") {
+          if (isTrainingRef.current && depthWarningRef.current !== "") {
             canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarning.includes("不足") ? "#FF0000" : "#00FF00";
-            canvasCtx.fillText(depthWarning, centerX, patientY + 100 * S);
+            canvasCtx.fillStyle = depthWarningRef.current.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
           }
 
           canvasCtx.restore();
