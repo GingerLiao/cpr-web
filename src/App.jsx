@@ -954,7 +954,7 @@ function CPRPractice() {
   const lowestYRef = useRef(0.0);
   const baselineShoulderYRef = useRef(null); 
   const currentPressMaxDepthRef = useRef(0.0); 
-  const threshold = 0.02;
+  const threshold = 0.04;
   const highestWristYRef = useRef(10000);
   const lowestWristYRef = useRef(0.0);   
   const lastWarningTimeRef = useRef(0); 
