@@ -468,7 +468,7 @@ function EmergencyCamera() {
   const lowestWristYRef = useRef(0.0);   
   const baselineShoulderYRef = useRef(null); 
   const currentPressMaxDepthRef = useRef(0.0); 
-  const threshold = 0.02;
+  const threshold = 0.04;
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
   const depthWarningRef = useRef("");
@@ -691,8 +691,13 @@ function EmergencyCamera() {
                 }
               } else {
                 let errors = [];
-                if (calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160) errors.push("手肘請打直");
-                if (centerVertAngle < 80 || centerVertAngle > 100) errors.push("重心未垂直");
+                let isArmBent = calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160;
+                let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
+                let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
+
+                if (isArmBent) errors.push("手肘請打直");
+                if (isNotVertical) errors.push("重心未垂直");
+                if (isOffset) errors.push("未垂直按壓")
 
                 // 宣告 newMsg 變數，解決崩潰問題
                 const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢良好維持！";
@@ -704,42 +709,39 @@ function EmergencyCamera() {
                 }
 
                 const currentShoulderY = midShoulder.y;
-                const currentWristY = midWrist.y * h;
                 const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-                  if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
 
                   if (currentShoulderY > highestYRef.current + threshold) { 
                     positionStateRef.current = "down"; 
                     lowestYRef.current = currentShoulderY; 
-                    lowestWristYRef.current = currentWristY;
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-                  if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
 
                   // 往下壓再回彈 (完成一次按壓)
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    highestYRef.current = currentShoulderY;
-                    highestWristYRef.current = currentWristY;
+                    let pressDepth = (lowestYRef.current - highestYRef.current) * h;
                     
-                    // 防連點機制 (250毫秒)
+                    // 重置最高點
+                    highestYRef.current = currentShoulderY;
+
                     if (now - lastPressTimeRef.current > 250) { 
                         lastPressTimeRef.current = now; 
                         
                         pressCountRef.current += 1;
                         setPressCount(pressCountRef.current);
 
-                        // EmergencyCamera 深度判斷
-                        let pressDepth = lowestWristYRef.current - highestWristYRef.current;
                         let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
                         
                         let msg = "";
-                        if (ratio < 0.10){
+                        if (ratio < 0.12){
                           msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
+                        } else if (ratio > 0.15) {
+                          msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
                         } else {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
                         }
@@ -958,7 +960,7 @@ function CPRPractice() {
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
   const depthWarningRef = useRef("");
-  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 }); 
+  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0, tooDeep: 0 }); 
 
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
@@ -1043,7 +1045,7 @@ function CPRPractice() {
     isTrainingRef.current = true;
     pressCountRef.current = 0;
     setPressCount(0); 
-    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0 };
+    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0, tooDeep: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120);
@@ -1089,7 +1091,9 @@ function CPRPractice() {
       bpm: bpm,
       armBent: errorsLogRef.current.armBent,
       notVertical: errorsLogRef.current.notVertical,
-      positionOffset: errorsLogRef.current.positionOffset
+      positionOffset: errorsLogRef.current.positionOffset,
+      notDeepEnough: errorsLogRef.current.notDeepEnough,
+      tooDeep: errorsLogRef.current.tooDeep
     };
 
     // 寫入 Supabase 資料庫
@@ -1209,13 +1213,13 @@ function CPRPractice() {
                 }
               } else {
                 let errors = [];
-                // 🔥 將布林值抽出來，才不會發生 reference error
                 let isArmBent = calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160;
                 let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
 
                 if (isArmBent) errors.push("手肘請打直");
                 if (isNotVertical) errors.push("重心未垂直");
+                if (isOffset) errors.push("未垂直按壓")
 
                 // 宣告 newMsg 變數
                 const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！";
@@ -1227,50 +1231,59 @@ function CPRPractice() {
                 }
 
                 const currentShoulderY = midShoulder.y;
-                const currentWristY = midWrist.y * h;
                 const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
 
                 if (positionStateRef.current === "up") {
+                  // 更新最高點 (只需看肩膀)
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-                  if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
 
                   if (currentShoulderY > highestYRef.current + threshold) { 
                     positionStateRef.current = "down"; 
                     lowestYRef.current = currentShoulderY; 
-                    lowestWristYRef.current = currentWristY;
                   }
                 } else if (positionStateRef.current === "down") {
+                  // 更新最低點 (只需看肩膀)
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-                  if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
 
-                  // 往下壓再回彈 (完成一次按壓)
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    highestYRef.current = currentShoulderY;
-                    highestWristYRef.current = currentWristY;
+                    
 
-                    // 防連點機制 (250毫秒)
+                    let pressDepth = (lowestYRef.current - highestYRef.current) * h;
+                    
+                    // 重置最高點
+                    highestYRef.current = currentShoulderY;
+
                     if (now - lastPressTimeRef.current > 250) { 
                         lastPressTimeRef.current = now; 
                         
                         pressCountRef.current += 1;
                         setPressCount(pressCountRef.current); 
 
-                        // 🔥 確保在按壓完成時才紀錄錯誤次數，避免一秒加60次
-                        if (isArmBent) errorsLogRef.current.armBent += 1;
-                        if (isNotVertical) errorsLogRef.current.notVertical += 1;
-                        if (isOffset) errorsLogRef.current.positionOffset += 1;
+                        if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
+                          if (isArmBent) errorsLogRef.current.armBent += 1;
+                          if (isNotVertical) errorsLogRef.current.notVertical += 1;
+                          if (isOffset) errorsLogRef.current.positionOffset += 1;
+                        }
 
-                        let pressDepth = lowestWristYRef.current - highestWristYRef.current;
+                        // 深度比例計算
                         let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
 
                         let msg = "";
-                        if (ratio < 0.10){
-                          errorsLogRef.current.notDeepEnough += 1;
+                        if (ratio < 0.12){ 
+                          if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
+                            errorsLogRef.current.notDeepEnough += 1;
+                          }
                           msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
+                        } else if (ratio > 0.15) {
+                          if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
+                            errorsLogRef.current.tooDeep += 1; 
+                          }
+                          msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
                         } else {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
                         }
+
                         setDepthWarning(msg);
                         depthWarningRef.current = msg;
                         
