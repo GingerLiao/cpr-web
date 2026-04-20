@@ -835,7 +835,7 @@ function EmergencyCamera() {
 
           if (isTrainingRef.current && depthWarningRef.current !== "") {
             canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarningRef.current.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillStyle = depthWarningRef.current.includes("良好") ? "#00FF00" : "#FF0000";
             canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
           }
           canvasCtx.restore();
@@ -1372,7 +1372,7 @@ function CPRPractice() {
 
           if (isTrainingRef.current && depthWarningRef.current !== "") {
             canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarningRef.current.includes("不足") ? "#FF0000" : "#00FF00";
+            canvasCtx.fillStyle = depthWarningRef.current.includes("良好") ? "#00FF00" : "#FF0000";
             canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
           }
 
