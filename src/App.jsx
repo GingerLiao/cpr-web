@@ -1074,16 +1074,49 @@ function CPRPractice() {
     }
     setIsTraining(false);
     isTrainingRef.current = false;
+    const { data: { user } } = await supabase.auth.getUser();
     const now = new Date();
     const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
     const timeStr = `${now.getHours() > 12 ? '下午' : '上午'}${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    let accuracy = 85;
-    if (bpm >= 100 && bpm <= 120) accuracy = Math.floor(Math.random() * 10) + 90;
-    else if (bpm === 0) accuracy = 0;
+    let accuracy = 0;
+    const totalPresses = pressCountRef.current;
+
+    if (totalPresses > 0 && bpm > 0) {
+      // 1. 速率分數 (BPM) - 權重 30%
+      // 標準：100~120 BPM 滿分。每偏離 1 下扣 2 分。
+      let bpmScore = 100;
+      if (bpm < 100) bpmScore = Math.max(0, 100 - (100 - bpm) * 2);
+      else if (bpm > 120) bpmScore = Math.max(0, 100 - (bpm - 120) * 2);
+
+      // 2. 深度分數 - 權重 35%
+      // 深度不足與過深都算嚴重失誤
+      const depthErrors = errorsLogRef.current.notDeepEnough + errorsLogRef.current.tooDeep;
+      const depthScore = Math.max(0, 100 - (depthErrors / totalPresses) * 100);
+
+      // 3. 位置分數 - 權重 20%
+      const positionScore = Math.max(0, 100 - (errorsLogRef.current.positionOffset / totalPresses) * 100);
+
+      // 4. 姿勢分數 - 權重 15%
+      // 手肘彎曲與身體未垂直合併計算
+      const postureErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical;
+      const postureScore = Math.max(0, 100 - (postureErrors / totalPresses) * 100);
+
+      // 計算最終加權總分 (四捨五入至整數)
+      accuracy = Math.round(
+        (bpmScore * 0.30) + 
+        (depthScore * 0.35) + 
+        (positionScore * 0.20) + 
+        (postureScore * 0.15)
+      );
+    } else {
+      // 如果完全沒按壓，或者沒算出 BPM，直接給 0 分
+      accuracy = 0;
+    }
 
     // 準備寫入資料庫的格式
     const recordData = {
+      user_id: user?.id,
       date: dateStr,
       time: timeStr,
       accuracy: accuracy,
@@ -1470,12 +1503,24 @@ function CPRPractice() {
 function CPRReport() {
   const navigate = useNavigate();
   const location = useLocation();
-  // 🔥 新增：加入 notDeepEnough 預設值
-  const reportData = location.state || { 
-    finalBpm: 114, totalPresses: 300, errors: { armBent: 8, notVertical: 5, positionOffset: 8, notDeepEnough: 5 },
-    date: '2025/12/15', time: '下午08:07', accuracy: 85
-  };
-
+  if (!location.state) {
+    return (
+      <div className="bg-gray-100 h-screen flex flex-col items-center justify-center font-sans">
+        <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+          <span className="text-3xl">⚠️</span>
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">找不到報告資料</h2>
+        <p className="text-gray-500 mb-6">請先進行 CPR 練習，或從歷史紀錄查看。</p>
+        <button 
+          onClick={() => navigate('/')} 
+          className="bg-blue-600 text-white px-8 py-3 rounded-full font-bold shadow-md active:scale-95"
+        >
+          返回首頁
+        </button>
+      </div>
+    );
+  }
+  const reportData = location.state;
   return (
     <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
       <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden overflow-y-auto">
@@ -1531,6 +1576,17 @@ function CPRReport() {
                   <span className="text-xs font-bold text-purple-500 w-10 text-right">致命</span>
                 </div>
               </div>
+
+              <div>
+                <div className="flex justify-between items-end mb-1">
+                  <span className="font-bold text-gray-800 text-base">按壓過深(&gt;6cm)</span><span className="text-xs text-gray-500 font-bold">出現 {reportData.errors.tooDeep || 0} 次</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-full bg-red-100 h-3 rounded-full overflow-hidden flex"><div className="bg-red-600 h-full rounded-full" style={{ width: `${Math.min((reportData.errors.tooDeep || 0) * 10, 100)}%` }}></div></div>
+                  <span className="text-xs font-bold text-red-600 w-10 text-right">危險</span>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -1624,13 +1680,14 @@ function CPRQuiz() {
       // 計算最終成績
       const correctCount = userRecord.filter(r => r.userAns === r.correctAns).length;
       const finalScore = Math.round((correctCount / quizQuestions.length) * 100);
-      
+      const { data: { user } } = await supabase.auth.getUser();
       const now = new Date();
       const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
       const timeStr = `${now.getHours() > 12 ? '下午' : '上午'}${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
 
       // 準備寫入資料庫的格式
       const recordData = {
+        user_id: user?.id,
         date: dateStr,
         time: timeStr,
         score: finalScore,
@@ -1760,7 +1817,7 @@ function HistoryRecord() {
           setCprHistory(cprData.map(item => ({
             id: item.id, date: item.date, time: item.time,
             accuracy: item.accuracy, count: item.count, bpm: item.bpm,
-            errors: { armBent: item.armBent, notVertical: item.notVertical, positionOffset: item.positionOffset, notDeepEnough: 0 }
+            errors: { armBent: item.armBent, notVertical: item.notVertical, positionOffset: item.positionOffset, notDeepEnough: item.notDeepEnough,tooDeep: item.tooDeep}
           })));
         }
 
