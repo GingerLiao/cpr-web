@@ -31,24 +31,39 @@
 
 ## 📂 專案資料夾架構
 
-```text
 cpr-web/
-├── public/                  # 靜態資源資料夾 (打包時會直接複製)
-│   └── pose_landmarker_heavy.task # ⚠️ 重要：MediaPipe AI 視覺模型檔案必須放在這裡
-├── src/                     # 主要程式碼資料夾 (開發核心)
-│   ├── assets/              # 圖片、Icon 等靜態資源
-│   ├── App.jsx              # 🌟 核心程式碼：包含所有頁面 UI、路由與 CPR 判斷邏輯
-│   ├── main.jsx             # React 程式進入點 (將 App 掛載到網頁上)
-│   ├── App.css              # App 專屬樣式表
-│   └── index.css            # 全域樣式表 (包含 Tailwind CSS 基礎設定)
-├── index.html               # 網頁進入點 (網站外殼)
-├── package.json             # 專案套件清單 (npm install 的依據)與執行指令
-├── vite.config.js           # Vite 打包與開發伺服器設定檔
-├── eslint.config.js         # 程式碼語法檢查設定 (維持團隊 coding style)
-├── .gitignore               # Git 忽略清單 (確保 node_modules, venv 等龐大檔案不會上傳)
-└── README.md                # 專案說明文件 (也就是本檔案)
-```
----
+├── public/                       # 🌐 公開靜態資源
+│   ├── pose_landmarker_full.task 
+│   └── vite.svg                  
+│
+├── src/                          
+│   ├── assets/                   # 🖼️ 需打包的靜態資源 (圖片、SVG)
+│   │
+│   ├── pages/                    # 📄 頁面
+│   │   ├── Home.jsx              # 首頁 (主導航與個人帳號 Modal)
+│   │   ├── Login.jsx             # 登入與訪客驗證頁面
+│   │   ├── AEDMap.jsx            # 附近 AED 尋找地圖 
+│   │   ├── EmergencyCPR.jsx      # 緊急 CPR 引導頁 (叫叫CD流程)
+│   │   ├── EmergencyCamera.jsx   # 緊急鏡頭輔助 
+│   │   ├── CPRPractice.jsx       # 日常 CPR 練習 (AI 日常訓練與計分)
+│   │   ├── CPRReport.jsx         # 實作練習分析報告 (單次成績檢視)
+│   │   ├── CPRQuiz.jsx           # 考照題庫測驗 (隨機出題系統)
+│   │   └── HistoryRecord.jsx     # 歷史雲端紀錄 (整合圖表與列表)
+│   │
+│   ├── utils/                    # 🛠️ 共用工具與常數區
+│   │   └── helpers.js            # 演算法 (角度計算、距離計算)、常數 (BPM)、Icon
+│   │
+│   ├── App.jsx                   # 🚦 總路由與狀態守門員 
+│   ├── main.jsx                  # 🚀 React 應用程式進入點
+│   ├── supabaseClient.js         # 🗄️ Supabase 資料庫連線設定 
+│   │
+│   ├── App.css                   
+│   └── index.css                 
+│
+├── .env                          # 🔐 環境變數 (存放 Supabase URL & API Keys)
+├── package.json                  # 📦 專案套件與依賴清單
+├── vite.config.js                # ⚙️ Vite 打包工具設定檔
+└── eslint.config.js              # 👮 程式碼語法檢查設定
 
 ## 👨‍💻 組員如何加入開發？ (新手必看)
 
