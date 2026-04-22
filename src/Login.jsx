@@ -1,89 +1,117 @@
-// src/Login.jsx
-import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // 引入導航 Hook
 import { supabase } from './supabaseClient';
 
-export default function Login() {
-  const navigate = useNavigate();
+const Login = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  
+  const navigate = useNavigate(); // 初始化導航功能
 
-  useEffect(() => {
-    // 如果已經登入或是訪客，直接導向首頁
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const isGuest = localStorage.getItem('isGuest') === 'true';
-      if (session || isGuest) {
-        navigate('/');
-      }
-    };
-    checkUser();
-
-    // 監聽登入成功事件，成功就跳轉首頁
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN') {
-        window.location.href = "/";
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  const handleGuestLogin = () => {
-    const confirmGuest = window.confirm(
-      "【訪客模式提醒】\n\n若使用訪客身份進入，所有的 CPR 練習紀錄與考照題庫成績將「不會」儲存到雲端。\n\n確定要以訪客身分繼續嗎？"
-    );
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
     
-    if (confirmGuest) {
-      localStorage.setItem('isGuest', 'true');
-      window.location.href = "/"; 
+    if (isRegistering) {
+      // 執行註冊邏輯
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      if (error) {
+        alert("註冊失敗：" + error.message);
+      } else {
+        alert("註冊成功！請檢查您的 Email 信箱驗證信");
+        navigate('/'); // 註冊成功後跳轉首頁
+      }
+    } else {
+      // 執行登入邏輯
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        alert("登入失敗：" + error.message);
+      } else {
+        // 登入成功後跳轉首頁
+        // App.jsx 會自動偵測到 session 改變並更新 hasAccess 狀態
+        navigate('/'); 
+      }
     }
+    setLoading(false);
+  };
+
+  // 配合 App.jsx 的訪客模式邏輯
+  const handleGuestLogin = () => {
+    localStorage.setItem('isGuest', 'true');
+    // 重新載入或跳轉以觸發 App.jsx 的狀態更新
+    window.location.href = '/'; 
   };
 
   return (
-    <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
-      <div className="w-full max-w-md bg-white min-h-screen p-8 flex flex-col justify-center shadow-2xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-gray-800 tracking-wider mb-2">CPR 訓練系統</h1>
-          <p className="text-gray-500 text-sm">登入以儲存您的練習紀錄與成績</p>
-        </div>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8">
+        <h2 className="text-2xl font-bold mb-6 text-center text-blue-600">
+          {isRegistering ? '建立新帳號' : 'CPR Web 系統登入'}
+        </h2>
         
-        <div className="mb-8">
-          <Auth
-            supabaseClient={supabase}
-            appearance={{ theme: ThemeSupa }}
-            providers={['google']}
-            localization={{
-              variables: {
-                sign_in: {
-                  email_label: '電子郵件',
-                  password_label: '密碼',
-                  button_label: '登入',
-                  loading_button_label: '登入中...',
-                },
-                sign_up: {
-                  email_label: '電子郵件',
-                  password_label: '密碼',
-                  button_label: '註冊',
-                  loading_button_label: '註冊中...',
-                },
-              },
-            }}
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 mb-1">密碼</label>
+            <input
+              type="password"
+              className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition duration-200"
+          >
+            {loading ? '處理中...' : (isRegistering ? '立即註冊' : '登入')}
+          </button>
+        </form>
 
-        <div className="relative flex py-5 items-center">
-          <div className="flex-grow border-t border-gray-300"></div>
-          <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">或</span>
-          <div className="flex-grow border-t border-gray-300"></div>
-        </div>
+        {/* 訪客登入按鈕 - 配合您的 App.jsx isGuest 邏輯 */}
+        {!isRegistering && (
+          <button
+            onClick={handleGuestLogin}
+            className="w-full mt-3 bg-gray-500 text-white py-2 rounded-md hover:bg-gray-600 transition duration-200"
+          >
+            以訪客身分試用
+          </button>
+        )}
 
-        <button
-          onClick={handleGuestLogin}
-          className="w-full bg-white hover:bg-gray-50 text-gray-700 py-3 rounded-md font-bold text-base transition-colors border-2 border-gray-300 active:scale-95"
-        >
-          以訪客身分繼續
-        </button>
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600">
+            {isRegistering ? '已經有帳號了？' : '還沒有帳號嗎？'}
+            <button
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="ml-2 text-blue-600 hover:underline font-medium"
+            >
+              {isRegistering ? '點此登入' : '立即註冊'}
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );
-}
+};
+
+export default Login;
