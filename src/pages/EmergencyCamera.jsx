@@ -292,7 +292,7 @@ export default function EmergencyCamera() {
                         let msg = "";
                         if (ratio < 0.12){
                           msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
-                        } else if (ratio > 0.15) {
+                        } else if (ratio > 0.20) {
                           msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
                         } else {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;

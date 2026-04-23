@@ -355,7 +355,7 @@ export default function CPRPractice() {
                             errorsLogRef.current.notDeepEnough += 1;
                           }
                           msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
-                        } else if (ratio > 0.15) {
+                        } else if (ratio > 0.20) {
                           if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
                             errorsLogRef.current.tooDeep += 1; 
                           }
