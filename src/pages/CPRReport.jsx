@@ -1,9 +1,41 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react'; // 🌟 新增：引入 useState 和 useEffect
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../supabaseClient'; // 🌟 新增：引入 Supabase 客戶端
 
 export default function CPRReport() {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // 🌟 新增：用來儲存 AI 回傳的建議文字的狀態
+  const [aiAdvice, setAiAdvice] = useState('系統正在分析您的實作數據，請稍候...');
+
+  const reportData = location.state;
+
+  // 🌟 新增：當頁面載入且有 reportData 時，呼叫後端 API
+  useEffect(() => {
+    async function fetchAiAdvice() {
+      if (!reportData) return;
+
+      try {
+        const { data, error } = await supabase.functions.invoke('generate-cpr-advice', {
+          body: { results: reportData } // 將前端的成績單丟給後端
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        // 把後端回傳的 AI 建議文字設定到狀態中
+        setAiAdvice(data.advice);
+      } catch (err) {
+        console.error("無法取得 AI 建議:", err);
+        setAiAdvice('分析系統暫時無法連線，請確認網路狀態後再試。');
+      }
+    }
+
+    fetchAiAdvice();
+  }, [reportData]);
+
   if (!location.state) {
     return (
       <div className="bg-gray-100 h-screen flex flex-col items-center justify-center font-sans">
@@ -21,7 +53,7 @@ export default function CPRReport() {
       </div>
     );
   }
-  const reportData = location.state;
+
   return (
     <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
       <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden overflow-y-auto">
@@ -40,6 +72,7 @@ export default function CPRReport() {
             <div className="absolute -top-4 left-4 bg-orange-100 w-8 h-8 rounded-full flex items-center justify-center"><span className="text-orange-500 font-bold">!</span></div>
             <h3 className="text-lg font-bold text-gray-800 mb-6 ml-10">常見錯誤分析</h3>
             <div className="space-y-5">
+              {/* --- 以下是原本的長條圖區域，維持不變 --- */}
               <div>
                 <div className="flex justify-between items-end mb-1">
                   <span className="font-bold text-gray-800 text-base">手肘彎曲</span><span className="text-xs text-gray-500 font-bold">出現 {reportData.errors.armBent} 次</span>
@@ -67,8 +100,6 @@ export default function CPRReport() {
                   <span className="text-xs font-bold text-blue-500 w-10 text-right">輕微</span>
                 </div>
               </div>
-              
-              {/* 🔥 這裡已經修正為 &lt; */}
               <div>
                 <div className="flex justify-between items-end mb-1">
                   <span className="font-bold text-gray-800 text-base">按壓深度不足(&lt;5cm)</span><span className="text-xs text-gray-500 font-bold">出現 {reportData.errors.notDeepEnough || 0} 次</span>
@@ -78,8 +109,6 @@ export default function CPRReport() {
                   <span className="text-xs font-bold text-purple-500 w-10 text-right">致命</span>
                 </div>
               </div>
-
-              {/* 🔥 這裡已經修正為 &gt; */}
               <div>
                 <div className="flex justify-between items-end mb-1">
                   <span className="font-bold text-gray-800 text-base">按壓過深(&gt;6cm)</span><span className="text-xs text-gray-500 font-bold">出現 {reportData.errors.tooDeep || 0} 次</span>
@@ -89,17 +118,17 @@ export default function CPRReport() {
                   <span className="text-xs font-bold text-red-600 w-10 text-right">危險</span>
                 </div>
               </div>
-
+              {/* --- 長條圖區域結束 --- */}
             </div>
           </div>
 
+          {/* 🌟 新增：動態 AI 改善建議區塊 (取代原本寫死的 ul) */}
           <div className="bg-[#f0f7f9] rounded-2xl p-5 mb-8">
-            <h3 className="text-base font-bold text-gray-900 mb-2">改善建議</h3>
-            <ul className="space-y-1 text-gray-800 text-sm font-medium leading-relaxed">
-              <li>• 保持手肘完全伸直，利用身體重量按壓</li>
-              <li>• 確保身體與地面呈現適當角度，增加按壓深度</li>
-              <li>• 跟隨節拍器節奏，維持穩定的按壓頻率</li>
-            </ul>
+            <h3 className="text-base font-bold text-gray-900 mb-3">AI 專屬改善建議</h3>
+            {/* 使用 whiteSpace: 'pre-line' 讓文字可以根據 AI 給的換行符號斷行 */}
+            <div className="text-gray-800 text-sm font-medium leading-relaxed" style={{ whiteSpace: 'pre-line' }}>
+              {aiAdvice}
+            </div>
           </div>
           
           <div className="flex justify-end">
