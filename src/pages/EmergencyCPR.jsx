@@ -31,16 +31,6 @@ export default function EmergencyCPR() {
     // 1. 觸發手機真實撥號 (測試時請填自己的手機或 123，正式展示前再改成 119)
     const phoneNumber = "123"; 
     window.location.href = `tel:${phoneNumber}`;
-
-    // 2. 讓 App 知道已經開始通話了 (啟動計時器)
-    setIsCalling(true);
-    setCallSeconds(0);
-
-    // 3. 延遲 1 秒後，自動幫使用者切換到「步驟 2：胸外按壓 (C)」
-    // 為什麼要延遲？為了讓手機有時間先彈出撥號畫面，然後我們的 App 默默在背景翻頁
-    setTimeout(() => {
-      setStep(2); 
-    }, 1000);
   };
   const currentStep = stepData[step];
 
