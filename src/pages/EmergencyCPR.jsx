@@ -22,11 +22,26 @@ export default function EmergencyCPR() {
 
   const stepData = [
     { titleLeft: <span className="text-red-500 font-black text-2xl">叫</span>, titleRight: <span className="text-gray-800 font-medium text-2xl tracking-widest">叫CD</span>, heading: "確認反應與呼吸：", points: ["確認環境安全。", "輕拍患者肩膀、大聲呼喊，檢查有無意識。", "快速掃描胸部起伏，確認有無正常呼吸（5-10秒內）。"] },
-    { titleLeft: <span className="text-gray-800 font-medium text-2xl">叫</span>, titleRight: <><span className="text-red-500 font-black text-2xl tracking-widest">叫</span><span className="text-gray-800 font-medium text-2xl tracking-widest">CD</span></>, heading: "呼叫求援、取得AED：", points: ["若無意識、無呼吸，立即撥打119。", "若現場有AED，設法取得；若有旁人，請旁人協助取得。"] },
+    { titleLeft: <span className="text-gray-800 font-medium text-2xl">叫</span>, titleRight: <><span className="text-red-500 font-black text-2xl tracking-widest">叫</span><span className="text-gray-800 font-medium text-2xl tracking-widest">CD</span></>, heading: "呼叫求援、取得AED：", points: ["若無意識、無呼吸，立即撥打119。", "若現場有AED，設法取得；若有旁人，請旁人協助取得。", "完成通話後，系統將自動進入下一步。"] },
     { titleLeft: <span className="text-gray-800 font-medium text-2xl">叫叫</span>, titleRight: <><span className="text-red-500 font-black text-2xl tracking-widest">C</span><span className="text-gray-800 font-medium text-2xl tracking-widest">D</span></>, heading: "胸外按壓：", points: ["位置：雙乳頭連線中央（胸骨下半段）。", "姿勢：雙手交疊，手指緊扣，手肘打直，以身體重量垂直下壓。", "口訣：用力壓、快快壓、胸回彈、莫中斷。速率100~120下/分，深度5-6公分。"] },
     { titleLeft: <span className="text-gray-800 font-medium text-2xl">叫叫C</span>, titleRight: <span className="text-red-500 font-black text-2xl tracking-widest">D</span>, heading: "操作 AED 電擊器：", points: ["【AED 操作口訣：開、貼、插、電】", "開：打開 AED 電擊器，取出 AED 貼片並開啟電源。", "貼：將 AED 貼片貼在患者的右胸上方和左胸下方。", "插：AED 貼片貼好後，將電擊貼片插銷與主機連結，若取得 AED 時插銷已接上則可略過此步驟。", "電：待 AED 自動分析心律結束之後，會判斷患者是否須要電擊。若有電擊必要，則在確認周圍無人觸碰患者後，按下電擊鍵。"] }
   ];
 
+  const handleEmergencyCall = () => {
+    // 1. 觸發手機真實撥號 (測試時請填自己的手機或 123，正式展示前再改成 119)
+    const phoneNumber = "123"; 
+    window.location.href = `tel:${phoneNumber}`;
+
+    // 2. 讓 App 知道已經開始通話了 (啟動計時器)
+    setIsCalling(true);
+    setCallSeconds(0);
+
+    // 3. 延遲 1 秒後，自動幫使用者切換到「步驟 2：胸外按壓 (C)」
+    // 為什麼要延遲？為了讓手機有時間先彈出撥號畫面，然後我們的 App 默默在背景翻頁
+    setTimeout(() => {
+      setStep(2); 
+    }, 1000);
+  };
   const currentStep = stepData[step];
 
   return (
@@ -109,10 +124,10 @@ export default function EmergencyCPR() {
           </div>
         </main>
 
-        {step < 2 && (
+        {step === 1 && (
           <div className="absolute bottom-10 left-0 w-full px-6 flex justify-between gap-4">
             {!isCalling ? (
-              <button onClick={() => { setIsCalling(true); setCallSeconds(0); }} className="bg-red-500 text-white font-bold text-lg py-4 px-8 rounded-full shadow-lg active:scale-95 transition-transform w-full">
+              <button onClick={handleEmergencyCall} className="bg-red-500 text-white font-bold text-lg py-4 px-8 rounded-full shadow-lg active:scale-95 transition-transform w-full">
                 撥打 119
               </button>
             ) : (
