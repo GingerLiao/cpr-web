@@ -9,6 +9,13 @@ export default function CPRReport() {
   const [aiAdvice, setAiAdvice] = useState('系統正在分析您的實作數據，請稍候...');
 
   const reportData = location.state;
+ const handleBack = () => {
+    if (location.state?.fromPractice) {
+      navigate('/'); // 剛練完，回主頁
+    } else {
+      navigate(-1);  // 從歷史紀錄來，回上一頁 (歷史紀錄頁)
+    }
+  };
 
   useEffect(() => {
     async function fetchAiAdvice() {
@@ -72,7 +79,7 @@ export default function CPRReport() {
     <div className="bg-gray-100 min-h-screen flex justify-center font-sans">
       <div className="w-full max-w-md bg-white h-screen relative flex flex-col shadow-2xl overflow-hidden overflow-y-auto">
         <header className="flex items-center p-6 pt-12 bg-white z-10">
-          <button onClick={() => navigate(-1)} className="w-12 h-12 flex items-center justify-center rounded-full border-2 border-gray-800 active:scale-90 transition-transform">
+          <button onClick={handleBack} className="w-12 h-12 flex items-center justify-center rounded-full border-2 border-gray-800 active:scale-90 transition-transform">
             <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
           </button>
           <h1 className="flex-1 text-center text-2xl font-medium text-orange-400 mr-12 tracking-wide">實作練習分析</h1>

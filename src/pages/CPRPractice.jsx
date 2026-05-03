@@ -195,7 +195,7 @@ export default function CPRPractice() {
       console.error('儲存至 Supabase 失敗:', error);
     }
 
-    navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy } });
+    navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
   };
 
   useEffect(() => {
