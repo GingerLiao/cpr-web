@@ -42,7 +42,7 @@ export default function CPRReport() {
 
   // 🔥 新增：動態判斷錯誤次數，回傳對應的四個階段與 Tailwind 顏色
   const getSeverity = (count) => {
-    if (count === 0) return { label: '輕微', textColor: 'text-green-500', barColor: 'bg-green-500', bgColor: 'bg-green-100' };
+    if (count === 0) return { label: '完美', textColor: 'text-green-500', barColor: 'bg-green-500', bgColor: 'bg-green-100' };
     if (count <= 5) return { label: '警告', textColor: 'text-blue-500', barColor: 'bg-blue-500', bgColor: 'bg-blue-100' };
     if (count <= 15) return { label: '注意', textColor: 'text-yellow-600', barColor: 'bg-yellow-400', bgColor: 'bg-yellow-100' };
     return { label: '危險', textColor: 'text-red-600', barColor: 'bg-red-500', bgColor: 'bg-red-100' };
