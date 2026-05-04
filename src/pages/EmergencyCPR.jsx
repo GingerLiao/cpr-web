@@ -69,7 +69,7 @@ export default function EmergencyCPR() {
               <div className="flex flex-col gap-4">
                 <button 
                    onClick={() => navigate('/emergency-camera') }
-                   className={`${!isCalling ? 'bg-[#A83232] text-white hover:bg-red-800' : 'bg-slate-300 text-slate-500'} px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-all w-full text-center`}
+                   className="bg-[#A83232] text-white hover:bg-red-800 px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-all w-full text-center"
                 >
                 </button>
               </div>
