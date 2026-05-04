@@ -114,7 +114,6 @@ export default function EmergencyCamera() {
     setBpm(0);
     setTimeLeft(120); 
     setWarningMsg("請開始按壓");
-    setDepthWarning("");
     depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
     currentPressMaxDepthRef.current = 0.0;
@@ -157,7 +156,7 @@ export default function EmergencyCamera() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        setWarningMsg("請將雙方對準人體輪廓...");
+        setWarningMsg("請對齊虛線框");
         
         navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "environment" } })
           .then((stream) => {
@@ -236,7 +235,7 @@ export default function EmergencyCamera() {
 
               if (!isInTargetBox) {
                 if (now - lastWarningTimeRef.current > 500) {
-                  setWarningMsg("請對準虛線框");
+                  setWarningMsg("請對齊虛線框");
                   lastWarningTimeRef.current = now;
                 }
               } else {
@@ -247,9 +246,13 @@ export default function EmergencyCamera() {
 
                 if (isArmBent) errors.push("手肘請打直");
                 if (isNotVertical) errors.push("重心未垂直");
-                if (isOffset) errors.push("未垂直按壓")
+                if (isOffset) errors.push("未垂直按壓");
 
-                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢良好維持！";
+                if (depthWarningRef.current === "深度不足" || depthWarningRef.current === "按壓太深") {
+                  errors.push(depthWarningRef.current);
+                }
+
+                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
                 
                 if (now - lastWarningTimeRef.current > 500) {
                   setWarningMsg(newMsg);
@@ -287,7 +290,6 @@ export default function EmergencyCamera() {
                         } else {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
                         }
-                        setDepthWarning(msg);
                         depthWarningRef.current = msg;
 
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
@@ -365,12 +367,6 @@ export default function EmergencyCamera() {
           canvasCtx.fillStyle = "rgba(255, 80, 80, 0.9)";
           canvasCtx.textAlign = "center";
           canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
-
-          if (isTrainingRef.current && depthWarningRef.current !== "") {
-            canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarningRef.current.includes("正確") ? "#00FF00" : "#FF0000";
-            canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
-          }
           canvasCtx.restore();
         }
       }
@@ -400,34 +396,18 @@ export default function EmergencyCamera() {
         <video ref={videoRef} className="hidden" playsInline></video>
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
 
-        <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
+        {/* 1. 頂部導航列：左右返回與翻轉鏡頭 */}
+        <div className="absolute top-0 left-0 w-full pt-12 px-6 pb-4 flex justify-between items-center z-20 pointer-events-none">
           <button 
             onClick={() => navigate('/emergency', { state: { step: 2 } })} 
-            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-
-          <div className="pointer-events-auto bg-black/60 backdrop-blur-md rounded-2xl px-5 py-2 flex gap-5 text-white shadow-lg border border-white/10 mt-1">
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">速率</span>
-              <span className={`text-lg font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-400' : 'text-red-400'}`}>{bpm}</span>
-            </div>
-            <div className="w-px bg-white/20 my-1"></div>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">次數</span>
-              <span className="text-lg font-black text-blue-400">{pressCount}</span>
-            </div>
-            <div className="w-px bg-white/20 my-1"></div>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">倒數</span>
-              <span className="text-lg font-black text-red-400 animate-pulse">{formatTime(timeLeft)}</span>
-            </div>
-          </div>
           
           <button 
             onClick={switchCamera} 
-            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -435,25 +415,45 @@ export default function EmergencyCamera() {
           </button>
         </div>
 
-        <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[80%] max-w-sm">
-          <div className={`px-4 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-bold shadow-lg text-white backdrop-blur-md transition-colors 
-            ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("良好") || warningMsg.includes("完美") ? 'bg-green-600/80' : 'bg-red-600/80'}`}>
-            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
+        {/* 2. 狀態提示區塊：整合深度與錯誤提示在正上方 */}
+        <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[90%] max-w-sm flex flex-col gap-3 items-center">
+          <div className={`px-8 py-2 rounded-full flex items-center justify-center gap-3 text-xl font-black shadow-lg text-white backdrop-blur-md transition-colors 
+            ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("完美") ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
+            <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
             <span className="tracking-wider">{warningMsg}</span>
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[85%] max-w-sm z-20">
-          {!isTraining ? (
-            <button onClick={handleStartEmergency} className="w-full bg-blue-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-blue-400/30">
-              開始偵測
-            </button>
-          ) : (
-            <button onClick={handleStopEmergency} className="w-full bg-rose-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-xl shadow-2xl active:scale-95 transition-transform border border-rose-400/30">
-              暫停按壓
-            </button>
-          )}
+        {/* 3. 底部控制列：計時器與開始/結束按鈕等寬對稱 */}
+        <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none">
+          
+          {/* 左側：倒數計時器 */}
+          <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full py-3 flex items-center justify-center text-white shadow-lg border border-white/10 w-36">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2.5"></span>
+            <span className="text-base font-bold text-rose-400 font-mono tracking-wider">{formatTime(timeLeft)}</span>
+          </div>
+
+          {/* 右側：開始/結束按鈕 */}
+          <div className="pointer-events-auto">
+            {!isTraining ? (
+              <button onClick={handleStartEmergency} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center justify-center gap-2 w-36">
+                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <polygon points="6,4 16,10 6,16" />
+                </svg>
+                開始偵測
+              </button>
+            ) : (
+              <button onClick={handleStopEmergency} className="bg-rose-500/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-rose-400/30 flex items-center justify-center gap-2 w-36">
+                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <rect x="5" y="5" width="10" height="10" />
+                </svg>
+                暫停按壓
+              </button>
+            )}
+          </div>
+          
         </div>
+
       </div>
     </div>
   );

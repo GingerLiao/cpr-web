@@ -30,13 +30,14 @@ export default function EmergencyCPR() {
   const handleEmergencyCall = () => {
     const phoneNumber = "119"; 
     window.location.href = `tel:${phoneNumber}`;
+    setIsCalling(true);
   };
 
   const currentStep = stepData[step];
 
   return (
     <div className="cpr-layout">
-      <div className="cpr-container">
+      <div className="cpr-container relative">
         <header className="cpr-header-center justify-between border-b border-slate-200/50 pb-4">
           <button onClick={() => navigate('/')} className="cpr-icon-btn shrink-0">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
@@ -44,8 +45,11 @@ export default function EmergencyCPR() {
           <div className="flex items-center mr-6">{currentStep.titleLeft}{currentStep.titleRight}</div>
         </header>
 
-        <main className="flex-1 px-6 py-8 flex flex-col">
-          <div className="cpr-card !mb-6 !p-6 border-rose-200">
+        {/* 加上 pb-32 確保內容滑到底時，不會被下方的導航按鈕擋住 */}
+        <main className="flex-1 px-6 py-8 flex flex-col overflow-y-auto pb-32">
+          
+          {/* ✅ 這裡把文字說明框改成了灰色系 (border-slate-200 bg-slate-50) */}
+          <div className="cpr-card !mb-6 !p-6 border-slate-200 bg-slate-50">
             <h2 className="text-lg font-bold text-slate-800 mb-3">{currentStep.heading}</h2>
             <ul className="list-disc pl-5 space-y-2 text-slate-700 font-medium leading-relaxed">
               {currentStep.points.map((point, idx) => <li key={idx}>{point}</li>)}
@@ -53,34 +57,31 @@ export default function EmergencyCPR() {
           </div>
 
           <div className="mt-2 space-y-4">
-            {step === 0 && (
-              <div className="flex justify-end">
-                <button onClick={() => setStep(1)} className="cpr-btn-primary">下一步</button>
-              </div>
-            )}
-            
             {step === 1 && (
               <div className="flex flex-col gap-4">
-                <button onClick={() => navigate('/aed', { state: { fromEmergency: true } })} className="cpr-btn-secondary bg-[#E09E75] hover:bg-orange-500 text-white">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <button onClick={() => navigate('/aed', { state: { fromEmergency: true } })} className="cpr-btn-secondary bg-[#E09E75] hover:bg-[#C77F52] text-white shadow-md py-3.5">
+                  <svg className="w-6 h-6 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                   尋找最近 AED
                 </button>
-                <div className="flex justify-between gap-3">
-                   <button onClick={() => setStep(0)} className="w-full bg-white text-slate-600 border-2 border-slate-200 py-3.5 rounded-xl font-bold text-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm">上一階段</button>
-                   <button onClick={() => setStep(2)} className="cpr-btn-primary w-full">下一階段</button>
-                </div>
+                
+                {!isCalling ? (
+                  <button onClick={handleEmergencyCall} className="cpr-btn-danger bg-red-500 text-white shadow-lg w-full text-center hover:bg-red-600 border-none py-3.5">
+                    點此撥打 119
+                  </button>
+                ) : (
+                  <div className="flex gap-4">
+                    <div className="bg-red-500 text-white font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg flex-1 text-center">通話時間 {formatTime(callSeconds)}</div>
+                    <button onClick={() => setIsCalling(false)} className="bg-amber-400 text-slate-900 font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg active:scale-95 transition-transform">結束通話</button>
+                  </div>
+                )}
               </div>
             )}
 
             {step === 2 && (
               <div className="flex flex-col gap-4">
-                <button onClick={() => { !isCalling && step < 2 ? alert("請先撥打 119 求救") : navigate('/emergency-camera'); }}  className="cpr-btn-secondary bg-[#A83232] hover:bg-red-800 text-white w-full">
+                <button onClick={() => { !isCalling && step < 2 ? alert("請先撥打 119 求救") : navigate('/emergency-camera'); }}  className="cpr-btn-secondary bg-[#A83232] hover:bg-red-800 text-white w-full shadow-md py-4">
                   開啟相機輔助按壓
                 </button>
-                <div className="flex justify-between gap-3">
-                   <button onClick={() => setStep(1)} className="w-full bg-white text-slate-600 border-2 border-slate-200 py-3.5 rounded-xl font-bold text-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm">上一階段</button>
-                   <button onClick={() => setStep(3)} className="cpr-btn-primary w-full">下一階段</button>
-                </div>
               </div>
             )}
 
@@ -92,29 +93,32 @@ export default function EmergencyCPR() {
                 >
                   {!isCalling ? "返回相機輔助按壓" : "請先撥打119"}
                 </button>
-                <div className="flex justify-between gap-3 mt-2">
-                   <button onClick={() => setStep(2)} className="w-full bg-white text-slate-600 border-2 border-slate-200 py-3.5 rounded-xl font-bold text-lg hover:bg-slate-50 active:scale-95 transition-all shadow-sm">上一階段</button>
-                   <button onClick={() => navigate('/')} className="cpr-btn-secondary bg-[#6B908F] w-full">結束急救</button>
-                </div>
               </div>
             )}
           </div>
         </main>
 
-        {step === 1 && (
-          <div className="absolute bottom-10 left-0 w-full px-6 flex justify-between gap-4">
-            {!isCalling ? (
-              <button onClick={handleEmergencyCall} className="cpr-btn-danger bg-red-500 text-white shadow-lg w-full text-center hover:bg-red-600 border-none">
-                點此撥打 119
-              </button>
-            ) : (
-              <>
-                <div className="bg-red-500 text-white font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg flex-1 text-center">通話時間 {formatTime(callSeconds)}</div>
-                <button onClick={() => setIsCalling(false)} className="bg-amber-400 text-slate-900 font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg active:scale-95 transition-transform">結束通話</button>
-              </>
-            )}
-          </div>
-        )}
+        {/* 統一在畫面最下方的導航列：白底上一步、綠底下一步，各佔 50% 且置中 */}
+        <div className="absolute bottom-8 left-0 w-full px-6 flex gap-4 z-20">
+          {step > 0 && (
+            <button 
+              onClick={() => setStep(step - 1)} 
+              className="w-1/2 bg-white text-slate-700 font-bold text-lg py-3.5 rounded-full shadow-lg border-2 border-slate-100 active:scale-95 transition-transform flex items-center justify-center"
+            >
+              上一步
+            </button>
+          )}
+          <button 
+            onClick={() => {
+              if (step < 3) setStep(step + 1);
+              else navigate('/'); 
+            }} 
+            className={`${step === 0 ? 'w-full' : 'w-1/2'} bg-[#6B908F] text-white font-bold text-lg py-3.5 rounded-full shadow-lg active:scale-95 transition-transform flex items-center justify-center`}
+          >
+            {step < 3 ? '下一步' : '結束急救'}
+          </button>
+        </div>
+
       </div>
     </div>
   );

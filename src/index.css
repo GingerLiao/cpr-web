@@ -21,23 +21,29 @@
      頂部導航與標題 (Header)
   ========================================= */
   .cpr-header {
-    @apply flex justify-between items-center p-6 pt-12 relative z-20;
+    @apply flex justify-between items-center px-8 pb-4 pt-12 relative z-20;
   }
 
   .cpr-header-center {
-    @apply flex items-center p-6 pt-12 z-20 bg-[#FAF8F5] relative;
+    @apply flex items-center px-8 pb-4 pt-12 z-20 bg-[#FAF8F5] relative;
   }
 
   .cpr-title {
-    @apply flex-1 text-center text-xl font-bold tracking-wider;
+    @apply flex-1 text-center text-2xl font-bold tracking-wider;
   }
 
   /* =========================================
      按鈕與卡片 (Buttons & Cards)
   ========================================= */
-  /* 左上角圓形返回/登出按鈕 */
+  
+ /* 1. 一般返回按鈕 (較小：48px) - 其他頁面會自動套用這個 */
   .cpr-icon-btn {
-    @apply w-12 h-12 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/60 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-[#E09E75] hover:bg-orange-50 z-10;
+    @apply w-12 h-12 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/60 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-[#6B908F] hover:bg-[#D7E4DE] z-10;
+  }
+
+  /* 2. 首頁登出按鈕 (較大：56px) - 專門給首頁使用 */
+  .cpr-icon-btn-lg {
+    @apply w-14 h-14 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/60 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-[#E09E75] hover:bg-orange-50 z-10;
   }
 
   /* 首頁四大功能選單按鈕 */
@@ -52,12 +58,12 @@
 
   /* 主要按鈕 (如：再次練習) */
   .cpr-btn-primary {
-    @apply bg-[#E09E75] text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-md active:scale-95 transition-all hover:bg-orange-500 text-center flex items-center justify-center gap-2;
+    @apply bg-[#E09E75] text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-md active:scale-95 transition-all hover:bg-[#C77F52] text-center flex items-center justify-center gap-2;
   }
 
   /* 次要按鈕 (如：登入註冊) */
   .cpr-btn-secondary {
-    @apply bg-[#6B908F] text-white px-8 py-3.5 rounded-xl font-bold text-lg hover:bg-teal-700 active:scale-95 transition-all shadow-md text-center flex items-center justify-center gap-2;
+    @apply bg-[#6B908F] text-white px-8 py-3.5 rounded-xl font-bold text-lg hover:bg-[#3C6D6B] active:scale-95 transition-all shadow-md text-center flex items-center justify-center gap-2;
   }
 
   /* 警告按鈕 (如：登出) */

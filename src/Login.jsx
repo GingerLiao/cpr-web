@@ -43,12 +43,12 @@ const Login = () => {
         <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-[#FAF6F0]/50 rounded-full blur-xl"></div>
         
         <h2 className="text-3xl font-black mb-10 text-center text-slate-800 tracking-wider relative z-10">
-          {isRegistering ? '建立新帳號' : 'CPR Web 登入'}
+          {isRegistering ? '建立新帳號' : 'CPR 登入'}
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
           <div>
-            <label className="block text-slate-700 mb-1.5 font-semibold text-sm pl-1">Email</label>
+            <label className="block text-slate-700 mb-1.5 font-semibold text-sm pl-1">帳號</label>
             <input
               type="email"
               className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E09E75] focus:border-[#E09E75] transition-all duration-200 placeholder-slate-400"
@@ -70,7 +70,7 @@ const Login = () => {
             />
           </div>
           <button type="submit" disabled={loading} className="cpr-btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed">
-            {loading ? '處理中...' : (isRegistering ? '註冊' : '登入')}
+            {loading ? '登入中...' : (isRegistering ? '註冊' : '登入')}
           </button>
         </form>
         

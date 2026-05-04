@@ -124,7 +124,7 @@ export default function HistoryRecord() {
               onClick={() => setActiveTab('cpr')} 
               className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${activeTab === 'cpr' ? 'bg-[#E09E75] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
             >
-              CPR 實作
+              CPR 練習
             </button>
           </div>
         </div>

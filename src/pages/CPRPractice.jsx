@@ -199,7 +199,7 @@ export default function CPRPractice() {
       await supabase.from('CprRecord').insert([recordData]);
       console.log('紀錄已儲存');
     } catch (error) {
-      console.error('儲存紀錄至 Supabase 失敗:', error);
+      console.error('儲存失敗:', error);
     }
 
     navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
@@ -223,7 +223,7 @@ export default function CPRPractice() {
           runningMode: "VIDEO",
           numPoses: 1
         });
-        setWarningMsg("請將雙方對準人體輪廓...");
+        setWarningMsg("請對齊虛線框");
         
         navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "environment" } })
           .then((stream) => {
@@ -233,7 +233,7 @@ export default function CPRPractice() {
             }
           })
           .catch((err) => {
-            console.error("相機權限遭拒或錯誤:", err);
+            console.error("相機權限遭拒:", err);
             setWarningMsg("請允許相機權限！");
           });
 
@@ -313,11 +313,14 @@ export default function CPRPractice() {
                 let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
 
-                if (isArmBent) errors.push("手肘請打直");
+                if (isArmBent) errors.push("手肘未打直");
                 if (isNotVertical) errors.push("重心未垂直");
                 if (isOffset) errors.push("未垂直按壓")
+                if (depthWarningRef.current === "深度不足" || depthWarningRef.current === "按壓太深") {
+                  errors.push(depthWarningRef.current);
+                }
 
-                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美，請保持！";
+                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
 
                 if (now - lastWarningTimeRef.current > 500) {
                   setWarningMsg(newMsg);
@@ -368,7 +371,6 @@ export default function CPRPractice() {
                         } else {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
                         }
-                        setDepthWarning(msg);
                         depthWarningRef.current = msg;
                         
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
@@ -482,59 +484,64 @@ export default function CPRPractice() {
         <video ref={videoRef} className="hidden" playsInline></video>
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover"></canvas>
 
-        <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
+        <div className="absolute top-0 left-0 w-full pt-12 px-6 pb-4 flex justify-between items-center z-20 pointer-events-none">
           <button 
             onClick={() => navigate(-1)} 
-            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-
-          <div className="pointer-events-auto bg-black/60 backdrop-blur-md rounded-2xl px-5 py-2 flex gap-5 text-white shadow-lg border border-white/10 mt-1">
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">速率</span>
-              <span className={`text-lg font-black ${bpm >= 100 && bpm <= 120 ? 'text-green-400' : 'text-indigo-400'}`}>{bpm}</span>
-            </div>
-            <div className="w-px bg-white/20 my-1"></div>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">次數</span>
-              <span className="text-lg font-black text-blue-400">{pressCount}</span>
-            </div>
-            <div className="w-px bg-white/20 my-1"></div>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">倒數</span>
-              <span className="text-lg font-black text-red-400">{formatTime(timeLeft)}</span>
-            </div>
-          </div>
           
           <button 
             onClick={switchCamera} 
-            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
 
-        <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[80%] max-w-sm">
-          <div className={`px-4 py-2 rounded-full flex items-center justify-center gap-2 text-sm font-bold shadow-lg text-white backdrop-blur-md transition-colors 
+        {/* 2. 狀態提示區塊：移到最上方中央 (top-12)，並且字體再放大 (text-xl) */}
+        <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[90%] max-w-sm flex flex-col gap-3 items-center">
+          <div className={`px-8 py-2 rounded-full flex items-center justify-center gap-3 text-xl font-black shadow-lg text-white backdrop-blur-md transition-colors 
             ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("完美") ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
-            <div className={`w-2 h-2 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
+            <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
             <span className="tracking-wider">{warningMsg}</span>
           </div>
+
+
+          
         </div>
 
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-[85%] max-w-sm z-20">
-          {!isTraining ? (
-            <button onClick={handleStartTraining} className="w-full bg-[#6B908F] text-white font-bold text-lg py-4 rounded-xl shadow-lg active:scale-95 transition-transform border border-teal-600/30">
-              開始練習
-            </button>
-          ) : (
-            <button onClick={handleStopTraining} className="w-full bg-red-500/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-red-400/30">
-              結束訓練
-            </button>
-          )}
+        {/* 3. 底部控制列：將計時器與操作按鈕放在同一個橫列 (左右對齊) */}
+        <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none">
+          
+          {/* 左側：倒數計時器 */}
+          <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-5 py-3 flex items-center justify-center text-white shadow-lg border border-white/10 w-36">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2.5"></span>
+            <span className="text-base font-bold text-rose-400 font-mono tracking-wider">{formatTime(timeLeft)}</span>
+          </div>
+
+          {/* 右側：開始/結束按鈕 */}
+          <div className="pointer-events-auto">
+            {!isTraining ? (
+              <button onClick={handleStartTraining} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm px-6 py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center gap-2 w-36">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <polygon points="6,4 16,10 6,16" />
+                </svg>
+                開始練習
+              </button>
+            ) : (
+              <button onClick={handleStopTraining} className="bg-rose-500/90 backdrop-blur-sm text-white font-bold text-sm px-6 py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-rose-400/30 flex items-center gap-2 w-36">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <rect x="5" y="5" width="10" height="10" />
+                </svg>
+                結束練習
+              </button>
+            )}
+          </div>
+          
         </div>
       </div>
     </div>

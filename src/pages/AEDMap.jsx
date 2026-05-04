@@ -148,7 +148,7 @@ export default function AEDMap() {
           <div className="bg-white p-5 rounded-t-3xl shadow-[0_-10px_20px_rgba(0,0,0,0.1)] z-20 relative -mt-6">
             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4"></div>
             <h2 className="text-base font-bold text-slate-800 mb-3 flex items-center justify-between">
-              附近 AED <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">直線距離</span>
+              附近 AED
             </h2>
             
             <div className="space-y-3 mb-5 overflow-y-auto max-h-[30vh] pr-2">
@@ -166,7 +166,7 @@ export default function AEDMap() {
                     <div className="text-right shrink-0">
                       {/* 距離顯示 (保留邏輯，改字體顏色) */}
                       <div className="font-black text-[#E09E75]">{aed.distance < 1 ? `${Math.round(aed.distance * 1000)}m` : `${aed.distance.toFixed(1)}km`}</div>
-                      <a href={`https://www.google.com/maps/dir/?api=1&destination=${aed.lat},${aed.lng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded mt-1 inline-block font-bold active:scale-95">Google 導航</a>
+                      <a href={`https://www.google.com/maps/dir/?api=1&destination=${aed.lat},${aed.lng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-rose-50 text-slate-600 px-2 py-1 rounded mt-1 inline-block font-bold active:scale-95">Google 導航</a>
                     </div>
                   </div>
                 ))
