@@ -244,7 +244,7 @@ export default function EmergencyCamera() {
                 let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
 
-                if (isArmBent) errors.push("手肘請打直");
+                if (isArmBent) errors.push("手肘未打直");
                 if (isNotVertical) errors.push("重心未垂直");
                 if (isOffset) errors.push("未垂直按壓");
 

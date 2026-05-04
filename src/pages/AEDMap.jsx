@@ -90,7 +90,7 @@ export default function AEDMap() {
   }, []);
 
   const handleBack = () => {
-    if (isFromEmergency) navigate('/emergency', { state: { step: 2 } });
+    if (isFromEmergency) navigate('/emergency', { state: { step: 1 } });
     else navigate(-1);
   };
 

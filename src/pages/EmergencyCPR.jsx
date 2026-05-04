@@ -5,20 +5,6 @@ export default function EmergencyCPR() {
   const navigate = useNavigate();
   const location = useLocation();
   const [step, setStep] = useState(location.state?.step || 0);
-  const [isCalling, setIsCalling] = useState(false);
-  const [callSeconds, setCallSeconds] = useState(0);
-
-  useEffect(() => {
-    let timer;
-    if (isCalling) timer = setInterval(() => setCallSeconds((prev) => prev + 1), 1000);
-    return () => clearInterval(timer);
-  }, [isCalling]);
-
-  const formatTime = (totalSeconds) => {
-    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-    const s = (totalSeconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
 
   const stepData = [
     { titleLeft: <span className="text-red-500 font-black text-2xl">叫</span>, titleRight: <span className="text-slate-800 font-medium text-2xl tracking-widest">叫CD</span>, heading: "檢查意識與呼吸", points: ["呼喚患者並輕拍雙肩", "檢查有無正常呼吸", "如果無意識且無正常呼吸，請立刻進行下一步"] },
@@ -28,9 +14,8 @@ export default function EmergencyCPR() {
   ];
 
   const handleEmergencyCall = () => {
-    const phoneNumber = "119"; 
+    const phoneNumber = "117"; 
     window.location.href = `tel:${phoneNumber}`;
-    setIsCalling(true);
   };
 
   const currentStep = stepData[step];
@@ -64,22 +49,17 @@ export default function EmergencyCPR() {
                   尋找最近 AED
                 </button>
                 
-                {!isCalling ? (
+
                   <button onClick={handleEmergencyCall} className="cpr-btn-danger bg-red-500 text-white shadow-lg w-full text-center hover:bg-red-600 border-none py-3.5">
                     點此撥打 119
                   </button>
-                ) : (
-                  <div className="flex gap-4">
-                    <div className="bg-red-500 text-white font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg flex-1 text-center">通話時間 {formatTime(callSeconds)}</div>
-                    <button onClick={() => setIsCalling(false)} className="bg-amber-400 text-slate-900 font-bold text-lg py-3.5 px-6 rounded-xl shadow-lg active:scale-95 transition-transform">結束通話</button>
-                  </div>
-                )}
+
               </div>
             )}
 
             {step === 2 && (
               <div className="flex flex-col gap-4">
-                <button onClick={() => { !isCalling && step < 2 ? alert("請先撥打 119 求救") : navigate('/emergency-camera'); }}  className="cpr-btn-secondary bg-[#A83232] hover:bg-red-800 text-white w-full shadow-md py-4">
+                <button onClick={() => { navigate('/emergency-camera'); }}  className="cpr-btn-secondary bg-[#A83232] hover:bg-red-800 text-white w-full shadow-md py-4">
                   開啟相機輔助按壓
                 </button>
               </div>
@@ -88,10 +68,9 @@ export default function EmergencyCPR() {
             {step === 3 && (
               <div className="flex flex-col gap-4">
                 <button 
-                   onClick={() => { !isCalling ? navigate('/emergency-camera') : alert("請先撥打 119 求救"); }}
+                   onClick={() => navigate('/emergency-camera') }
                    className={`${!isCalling ? 'bg-[#A83232] text-white hover:bg-red-800' : 'bg-slate-300 text-slate-500'} px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-all w-full text-center`}
                 >
-                  {!isCalling ? "返回相機輔助按壓" : "請先撥打119"}
                 </button>
               </div>
             )}
