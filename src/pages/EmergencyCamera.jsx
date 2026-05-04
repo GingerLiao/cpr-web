@@ -8,18 +8,20 @@ export default function EmergencyCamera() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const audioCtxRef = useRef(null); 
+
   const poseLandmarkerRef = useRef(null);
   const requestRef = useRef(null);
-  
+
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0);
-  const [warningMsg, setWarningMsg] = useState("模型載入中...");
+  const [warningMsg, setWarningMsg] = useState("系統初始化中...");
   const [depthWarning, setDepthWarning] = useState(""); 
+
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
-  const [facingMode, setFacingMode] = useState("environment"); 
-  const facingModeRef = useRef("environment"); 
+  const [facingMode, setFacingMode] = useState("environment");
 
+  const facingModeRef = useRef("environment"); 
   const isTrainingRef = useRef(false);
   const pressCountRef = useRef(0);
   const startTimeRef = useRef(0);
@@ -29,6 +31,7 @@ export default function EmergencyCamera() {
   const baselineShoulderYRef = useRef(null); 
   const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.04;
+
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
   const depthWarningRef = useRef("");
@@ -37,22 +40,18 @@ export default function EmergencyCamera() {
     const newMode = facingMode === "environment" ? "user" : "environment";
     setFacingMode(newMode);
     facingModeRef.current = newMode;
-    
     if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(track => track.stop());
     }
-    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720, facingMode: newMode } 
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: newMode } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
     } catch (err) {
       console.error("切換鏡頭失敗:", err);
-      alert("無法切換鏡頭，請確認相機權限！");
+      alert("無法切換鏡頭");
     }
   };
 
@@ -71,13 +70,10 @@ export default function EmergencyCamera() {
         if (audioCtxRef.current.state === 'running') {
           const osc = audioCtxRef.current.createOscillator();
           const gainNode = audioCtxRef.current.createGain();
-          
           osc.type = 'sine';
           osc.frequency.setValueAtTime(800, audioCtxRef.current.currentTime);
-          
           gainNode.gain.setValueAtTime(1, audioCtxRef.current.currentTime);
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtxRef.current.currentTime + 0.1);
-          
           osc.connect(gainNode);
           gainNode.connect(audioCtxRef.current.destination);
           osc.start(audioCtxRef.current.currentTime);
@@ -93,7 +89,7 @@ export default function EmergencyCamera() {
     if (isTraining && timeLeft > 0) {
       timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
     } else if (timeLeft === 0 && isTraining) {
-      alert("⚠️ 2 分鐘已到！請換人接手按壓！");
+      alert("兩分鐘已到！請換人");
       setTimeLeft(120); 
     }
     return () => clearInterval(timer);
@@ -117,7 +113,7 @@ export default function EmergencyCamera() {
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120); 
-    setWarningMsg("請開始按壓！");
+    setWarningMsg("請開始按壓");
     setDepthWarning("");
     depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
@@ -127,7 +123,6 @@ export default function EmergencyCamera() {
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
     const ctx = audioCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
-    
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -175,11 +170,11 @@ export default function EmergencyCamera() {
             console.error("相機權限遭拒或錯誤:", err);
             setWarningMsg("請允許相機權限！");
           });
+
       } catch (error) {
         console.error("模型載入失敗:", error);
       }
     };
-
     initializeMediaPipe();
 
     const renderLoop = () => {
@@ -233,16 +228,15 @@ export default function EmergencyCamera() {
 
             if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
               const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-              
               if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
                 baselineShoulderYRef.current = midShoulder.y;
               }
-              
               const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
               const now = Date.now();
+
               if (!isInTargetBox) {
                 if (now - lastWarningTimeRef.current > 500) {
-                  setWarningMsg("請將雙方對準人體輪廓");
+                  setWarningMsg("請對準虛線框");
                   lastWarningTimeRef.current = now;
                 }
               } else {
@@ -267,14 +261,12 @@ export default function EmergencyCamera() {
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-
                   if (currentShoulderY > highestYRef.current + threshold) { 
                     positionStateRef.current = "down"; 
                     lowestYRef.current = currentShoulderY; 
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
                     let pressDepth = (lowestYRef.current - highestYRef.current) * h;
@@ -282,15 +274,13 @@ export default function EmergencyCamera() {
                     highestYRef.current = currentShoulderY;
 
                     if (now - lastPressTimeRef.current > 250) { 
-                        lastPressTimeRef.current = now; 
-                        
+                        lastPressTimeRef.current = now;
                         pressCountRef.current += 1;
                         setPressCount(pressCountRef.current);
-
                         let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
                         
                         let msg = "";
-                        if (ratio < 0.12){
+                        if (ratio < 0.12){ 
                           msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
                         } else if (ratio > 0.20) {
                           msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
@@ -298,10 +288,10 @@ export default function EmergencyCamera() {
                           msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
                         }
                         setDepthWarning(msg);
-                        depthWarningRef.current = msg; 
+                        depthWarningRef.current = msg;
 
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-                        if (elapsedTime > 3) {
+                        if (elapsedTime > 3) { 
                            setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
                         }
                     }
@@ -317,17 +307,17 @@ export default function EmergencyCamera() {
               canvasCtx.stroke();
             }
           }
-          canvasCtx.restore(); 
+          canvasCtx.restore();
 
           canvasCtx.save();
           const S = h / 780; 
           canvasCtx.lineWidth = 6 * S; 
           canvasCtx.strokeStyle = "rgba(255, 255, 255, 0.5)"; 
-          canvasCtx.setLineDash([12 * S, 10 * S]); 
+          canvasCtx.setLineDash([12 * S, 10 * S]);
           
           const centerX = w * 0.5;
           const rescuerHeadY = h * 0.35; 
-          const patientY = rescuerHeadY + 300 * S; 
+          const patientY = rescuerHeadY + 300 * S;
           
           canvasCtx.beginPath();
           canvasCtx.arc(centerX - 130 * S, patientY, 42 * S, 0, 2 * Math.PI);
@@ -356,9 +346,9 @@ export default function EmergencyCamera() {
           canvasCtx.beginPath();
           canvasCtx.lineWidth = 4 * Math.max(1, S); 
           canvasCtx.moveTo(centerX - 90 * S, rescuerHeadY + 130 * S); 
-          canvasCtx.lineTo(centerX - 10 * S, patientY - 26 * S);      
+          canvasCtx.lineTo(centerX - 10 * S, patientY - 26 * S);     
           canvasCtx.moveTo(centerX + 90 * S, rescuerHeadY + 130 * S); 
-          canvasCtx.lineTo(centerX + 10 * S, patientY - 26 * S);      
+          canvasCtx.lineTo(centerX + 10 * S, patientY - 26 * S);     
           canvasCtx.stroke();
 
           canvasCtx.setLineDash([]); 
@@ -378,7 +368,7 @@ export default function EmergencyCamera() {
 
           if (isTrainingRef.current && depthWarningRef.current !== "") {
             canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarningRef.current.includes("良好") ? "#00FF00" : "#FF0000";
+            canvasCtx.fillStyle = depthWarningRef.current.includes("正確") ? "#00FF00" : "#FF0000";
             canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
           }
           canvasCtx.restore();
@@ -413,7 +403,7 @@ export default function EmergencyCamera() {
         <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
           <button 
             onClick={() => navigate('/emergency', { state: { step: 2 } })} 
-            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
@@ -430,14 +420,14 @@ export default function EmergencyCamera() {
             </div>
             <div className="w-px bg-white/20 my-1"></div>
             <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-300 font-medium">換手</span>
+              <span className="text-[10px] text-gray-300 font-medium">倒數</span>
               <span className="text-lg font-black text-red-400 animate-pulse">{formatTime(timeLeft)}</span>
             </div>
           </div>
           
           <button 
             onClick={switchCamera} 
-            className="pointer-events-auto bg-black/50 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            className="pointer-events-auto bg-black/50 text-white w-12 h-12 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -459,8 +449,8 @@ export default function EmergencyCamera() {
               開始偵測
             </button>
           ) : (
-            <button onClick={handleStopEmergency} className="w-full bg-red-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-full shadow-2xl active:scale-95 transition-transform border border-red-400/30">
-              AED已抵達 / 暫停按壓
+            <button onClick={handleStopEmergency} className="w-full bg-rose-600/90 backdrop-blur-sm text-white font-bold text-base py-3.5 rounded-xl shadow-2xl active:scale-95 transition-transform border border-rose-400/30">
+              暫停按壓
             </button>
           )}
         </div>

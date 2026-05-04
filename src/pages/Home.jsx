@@ -15,81 +15,48 @@ export default function Home({ session, isGuest }) {
   const userEmail = session?.user?.email || "";
 
   return (
-    // 整頁背景改為柔和的米白色
-    <div className="bg-[#FAF8F5] min-h-screen flex justify-center font-sans">
-      <div className="w-full max-w-md bg-[#FAF8F5] h-screen relative flex flex-col shadow-2xl overflow-hidden">
+    <div className="cpr-layout">
+      <div className="cpr-container">
         
-        {/* 頂部導航列 */}
-        <header className="flex justify-between items-center p-6 pt-12 relative z-20">
-          
-          {/* 🔥 修改：左側改為向左的登出按鈕 */}
-          <button 
-            onClick={handleLogout}
-            className="w-12 h-12 flex justify-center items-center active:scale-90 transition-transform bg-white/50 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-rose-500 hover:bg-rose-50"
-          >
+        <header className="cpr-header">
+          <button onClick={handleLogout} className="cpr-icon-btn hover:text-rose-500 hover:bg-rose-50">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
             </svg>
           </button>
-          
-          <button 
-            onClick={() => setShowProfileModal(true)} 
-            className="w-14 h-14 flex justify-center items-center active:scale-90 transition-transform rounded-full"
-          >
-            {/* 純程式碼刻出的可愛女性頭像插畫 */}
+          <button onClick={() => setShowProfileModal(true)} className="w-14 h-14 flex justify-center items-center active:scale-90 transition-transform rounded-full">
             <UserAvatar />
           </button>
         </header>
 
-        {/* 主要功能區塊 */}
         <main className="flex-1 px-6 pt-2 relative flex flex-col justify-center z-10 pb-16">
           <div className="grid grid-cols-2 gap-x-5 gap-y-7 relative h-[530px]">
-            
-            {/* 🔥 修改：使用 justify-center 和 gap-4 讓圖文靠近 */}
-            {/* 1. 尋找 AED */}
-            <button onClick={() => navigate('/aed')} className="bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl shadow-gray-100/50 border-4 border-[#6B908F]/20 relative">
+            <button onClick={() => navigate('/aed')} className="cpr-menu-btn border-[#6B908F]/20">
               <span className="text-[#6B908F] font-bold text-xl tracking-wider z-10">尋找 AED</span>
-              <div className="z-10">
-                <AedIcon />
-              </div>
+              <div className="z-10"><AedIcon /></div>
             </button>
-            
-            {/* 2. CPR 練習 */}
-            <button onClick={() => navigate('/practice')} className="bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl shadow-gray-100/50 border-4 border-[#E09E75]/20 relative">
+            <button onClick={() => navigate('/practice')} className="cpr-menu-btn border-[#E09E75]/20">
               <span className="text-[#E09E75] font-bold text-xl tracking-wider z-10">CPR 練習</span>
-              <div className="z-10">
-                <CprIcon />
-              </div>
+              <div className="z-10"><CprIcon /></div>
             </button>
-            
-            {/* 3. 考照題庫 */}
-            <button onClick={() => navigate('/quiz')} className="bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl shadow-gray-100/50 border-4 border-[#D4A373]/20 relative">
-              <div className="z-10">
-                <QuizIcon />
-              </div>
+            <button onClick={() => navigate('/quiz')} className="cpr-menu-btn border-[#D4A373]/20">
+              <div className="z-10"><QuizIcon /></div>
               <span className="text-[#D4A373] font-bold text-xl tracking-wider z-10">考照題庫</span>
             </button>
-            
-            {/* 4. 歷史紀錄 */}
-            <button onClick={() => navigate('/history')} className="bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl shadow-gray-100/50 border-4 border-[#82A098]/20 relative">
-              <div className="z-10">
-                <HistoryIcon />
-              </div>
+            <button onClick={() => navigate('/history')} className="cpr-menu-btn border-[#82A098]/20">
+              <div className="z-10"><HistoryIcon /></div>
               <span className="text-[#82A098] font-bold text-xl tracking-wider z-10">歷史紀錄</span>
             </button>
-
-            {/* 中央緊急按鈕 - 顯著縮小尺寸，確保完全無遮擋 */}
+            
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
               <button onClick={() => navigate('/emergency')} className="bg-[#A83232] w-36 h-36 rounded-full border-[8px] border-[#FAF8F5] shadow-2xl flex flex-col items-center justify-center active:scale-95 transition-transform">
                 <span className="text-white text-2xl font-black tracking-widest mb-1 drop-shadow-sm">緊急CPR</span>
                 <span className="text-white/90 text-[10px] text-center leading-tight px-3 font-medium">點擊撥打119並啟動<br/>CPR指導</span>
               </button>
             </div>
-
           </div>  
         </main>
 
-        {/* 個人檔案 Modal */}
         {showProfileModal && (
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-[999] flex items-center justify-center px-6">
             <div className="bg-white rounded-3xl w-full p-6 shadow-2xl animate-fade-in-up border border-slate-100">
@@ -97,20 +64,13 @@ export default function Home({ session, isGuest }) {
                 <h3 className="text-xl font-bold text-slate-800">帳號狀態</h3>
                 <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl font-bold transition-colors">✕</button>
               </div>
-              
               {isGuest ? (
                 <div className="text-center py-2">
                   <div className="bg-amber-50 text-amber-700 p-4 rounded-xl text-sm mb-6 border border-amber-200/50">
                     您目前以 <strong className="font-bold">訪客身分</strong> 瀏覽。<br/>
                     <span className="text-xs mt-1 block text-amber-600">⚠️ 練習紀錄與題庫成績將不會儲存至雲端</span>
                   </div>
-                  <button
-                    onClick={() => {
-                      localStorage.removeItem('isGuest');
-                      window.location.href = "/login";
-                    }}
-                    className="w-full bg-[#6B908F] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-teal-700 active:scale-95 transition-all shadow-md"
-                  >
+                  <button onClick={() => { localStorage.removeItem('isGuest'); window.location.href = "/login"; }} className="cpr-btn-secondary w-full">
                     前往登入 / 註冊
                   </button>
                 </div>
@@ -121,20 +81,11 @@ export default function Home({ session, isGuest }) {
                       <UserAvatar />
                     </div>
                     <div className="flex flex-col items-center mt-2">
-                      <div className="text-sm font-bold truncate w-full mb-1">
-                        {userEmail || "載入中..."}
-                      </div>
-                      <span className="text-[11px] text-[#6B908F] font-bold bg-[#6B908F]/10 px-2.5 py-1 rounded-full">
-                        已登入正式會員
-                      </span>
+                      <div className="text-sm font-bold truncate w-full mb-1">{userEmail || "載入中..."}</div>
+                      <span className="text-[11px] text-[#6B908F] font-bold bg-[#6B908F]/10 px-2.5 py-1 rounded-full">已登入正式會員</span>
                     </div>
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full bg-rose-50 text-rose-600 hover:bg-rose-100 py-3.5 rounded-xl font-bold text-lg active:scale-95 transition-all border border-rose-100 flex items-center justify-center gap-2"
-                  >
-                    登出系統
-                  </button>
+                  <button onClick={handleLogout} className="cpr-btn-danger w-full">登出系統</button>
                 </div>
               )}
             </div>
@@ -145,11 +96,6 @@ export default function Home({ session, isGuest }) {
   );
 }
 
-// ==========================================
-// 🎨 以下為純程式碼手繪的可愛插畫元件
-// ==========================================
-
-// 可愛的女性頭像插畫 (UserAvatar)
 function UserAvatar() {
   return (
     <svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
