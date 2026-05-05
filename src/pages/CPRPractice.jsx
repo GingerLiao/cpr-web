@@ -21,6 +21,9 @@ export default function CPRPractice() {
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
   const [facingMode, setFacingMode] = useState("environment");
+  
+  // ✅ 新增：用來顯示分析中的過場動畫
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const facingModeRef = useRef("environment"); 
   const isTrainingRef = useRef(false);
@@ -150,11 +153,12 @@ export default function CPRPractice() {
 
     setIsTraining(false);
     isTrainingRef.current = false;
+    setIsAnalyzing(true); // 開啟分析載入畫面
 
     const { data: { user } } = await supabase.auth.getUser();
     const now = new Date();
     const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
-    const timeStr = `${now.getHours() > 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     let accuracy = 0;
     const totalPresses = pressCountRef.current;
@@ -177,10 +181,37 @@ export default function CPRPractice() {
         (positionScore * 0.20) + 
         (postureScore * 0.15)
       );
-    } else {
-      accuracy = 0;
     }
 
+    // ✅ 步驟 1：在此直接分析建議 (不扣不必要的 Token)
+    let finalAdvice = "";
+    const totalErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + errorsLogRef.current.positionOffset + errorsLogRef.current.notDeepEnough + errorsLogRef.current.tooDeep;
+    
+    if (accuracy === 100 || totalErrors === 0) {
+      finalAdvice = '您的按壓姿勢、深度與頻率都非常完美，符合急救標準，請繼續保持！';
+    } else {
+      try {
+        const { data: aiData, error: aiError } = await supabase.functions.invoke('generate-cpr-advice', {
+          body: { 
+            results: { 
+              accuracy: accuracy, 
+              totalPresses: totalPresses, 
+              finalBpm: bpm, 
+              errors: errorsLogRef.current 
+            } 
+          } 
+        });
+        if (!aiError && aiData) {
+          finalAdvice = aiData.advice;
+        } else {
+          finalAdvice = '分析系統暫時無法連線，建議稍後至歷史紀錄查看。';
+        }
+      } catch (err) {
+        finalAdvice = '分析系統暫時無法連線，建議稍後至歷史紀錄查看。';
+      }
+    }
+
+    // ✅ 步驟 2：將分析結果與其他數據一併建立
     const recordData = {
       user_id: user?.id,
       date: dateStr,
@@ -192,17 +223,27 @@ export default function CPRPractice() {
       notVertical: errorsLogRef.current.notVertical,
       positionOffset: errorsLogRef.current.positionOffset,
       notDeepEnough: errorsLogRef.current.notDeepEnough,
-      tooDeep: errorsLogRef.current.tooDeep
+      tooDeep: errorsLogRef.current.tooDeep,
+      ai_advice: finalAdvice // 🌟 一起塞進資料庫
     };
 
     try {
-      await supabase.from('CprRecord').insert([recordData]);
-      console.log('紀錄已儲存');
+      const { data, error } = await supabase.from('CprRecord').insert([recordData]).select();
+      if (error) throw error;
+      
+      const newRecordId = data && data.length > 0 ? data[0].id : null;
+      console.log('紀錄與分析建議已合併儲存');
+      
+      setIsAnalyzing(false); // 關閉載入動畫
+      
+      // ✅ 步驟 3：帶入所有資料跳轉至純展示的報告頁
+      navigate('/report', { state: { id: newRecordId, aiAdvice: finalAdvice, finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
+
     } catch (error) {
       console.error('儲存失敗:', error);
+      setIsAnalyzing(false);
+      navigate('/report', { state: { aiAdvice: finalAdvice, finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
     }
-
-    navigate('/report', { state: { finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
   };
 
   useEffect(() => {
@@ -478,7 +519,7 @@ export default function CPRPractice() {
   }, []);
 
   return (
-    <div className="bg-black h-[100dvh] overflow-hidden flex justify-center font-sans">
+    <div className="bg-black h-[100dvh] overflow-hidden flex justify-center font-sans relative">
       <div className="w-full max-w-md bg-black h-[100dvh] relative flex flex-col overflow-hidden">
         
         <video ref={videoRef} className="hidden" playsInline></video>
@@ -502,28 +543,20 @@ export default function CPRPractice() {
           </button>
         </div>
 
-        {/* 2. 狀態提示區塊：移到最上方中央 (top-12)，並且字體再放大 (text-xl) */}
         <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[90%] max-w-sm flex flex-col gap-3 items-center">
           <div className={`px-8 py-2 rounded-full flex items-center justify-center gap-3 text-xl font-black shadow-lg text-white backdrop-blur-md transition-colors 
             ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("完美") ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
             <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
             <span className="tracking-wider">{warningMsg}</span>
           </div>
-
-
-          
         </div>
 
-        {/* 3. 底部控制列：將計時器與操作按鈕放在同一個橫列 (左右對齊) */}
         <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none">
-          
-          {/* 左側：倒數計時器 */}
           <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-5 py-3 flex items-center justify-center text-white shadow-lg border border-white/10 w-36">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2.5"></span>
             <span className="text-base font-bold text-rose-400 font-mono tracking-wider">{formatTime(timeLeft)}</span>
           </div>
 
-          {/* 右側：開始/結束按鈕 */}
           <div className="pointer-events-auto">
             {!isTraining ? (
               <button onClick={handleStartTraining} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm px-6 py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center gap-2 w-36">
@@ -541,9 +574,16 @@ export default function CPRPractice() {
               </button>
             )}
           </div>
-          
         </div>
       </div>
+
+      {/* ✅ 新增：AI 分析中的載入畫面 */}
+      {isAnalyzing && (
+        <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-[999] flex flex-col items-center justify-center text-white animate-fade-in">
+           <div className="w-16 h-16 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin mb-6"></div>
+           <h2 className="text-xl font-bold tracking-wider mb-2">正在分析您的 CPR 練習數據...</h2>
+        </div>
+      )}
     </div>
   );
 }

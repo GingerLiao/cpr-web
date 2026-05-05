@@ -5,31 +5,71 @@ import { supabase } from '../supabaseClient';
 export default function CPRReport() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [aiAdvice, setAiAdvice] = useState('系統正在分析您的實作數據，請稍候...');
+  const [aiAdvice, setAiAdvice] = useState('系統正在分析您的練習數據，請稍候...');
   const reportData = location.state;
 
   const handleBack = () => {
-    if (location.state?.fromPractice) {
-      navigate('/');
-    } else {
-      navigate(-1);
-    }
+    navigate('/history', { state: { activeTab: 'cpr' } });
   };
 
   useEffect(() => {
     async function fetchAiAdvice() {
       if (!reportData) return;
+
+      // 1. 滿分防呆 (不扣 Token)
+      const totalErrors = (reportData.errors?.armBent || 0) + (reportData.errors?.notVertical || 0) + (reportData.errors?.positionOffset || 0) + (reportData.errors?.notDeepEnough || 0) + (reportData.errors?.tooDeep || 0);
+      if (reportData.accuracy === 100 || totalErrors === 0) {
+        setAiAdvice('您的按壓姿勢、深度與頻率都非常完美，符合急救標準，請繼續保持！');
+        return;
+      }
+
+      // 2. 檢查快取與「自我修復機制」
+      // 如果快取存在，且「不包含」失敗的關鍵字，才算是有效的快取
+      const hasCache = reportData.aiAdvice && reportData.aiAdvice.trim() !== "";
+      const isFailedCache = hasCache && (reportData.aiAdvice.includes("無法連線") || reportData.aiAdvice.includes("後端真實錯誤"));
+
+      if (hasCache && !isFailedCache) {
+        // 這是一份完美的歷史分析紀錄，直接顯示，不扣 Token！
+        setAiAdvice(reportData.aiAdvice);
+        return;
+      }
+
+      // 3. 走到這裡代表：(A) 沒快取 或 (B) 上次分析失敗了。開始重新呼叫 API！
       try {
+        // 如果是重新分析，先在畫面上給個提示
+        if (isFailedCache) {
+           setAiAdvice('系統正在為您分析中...');
+        }
+
         const { data, error } = await supabase.functions.invoke('generate-cpr-advice', {
           body: { results: reportData } 
         });
+
         if (error) throw error;
+
+        // ✅ 立刻更新畫面
         setAiAdvice(data.advice);
+
+        // ✅ 背景存入資料庫作快取 (覆蓋掉原本失敗的紀錄)
+        if (reportData.id) {
+          supabase.from('CprRecord')
+            .update({ ai_advice: data.advice })
+            .eq('id', reportData.id)
+            .then(({ error: dbError }) => {
+              if (dbError) {
+                console.warn("⚠️ 快取寫入失敗:", dbError);
+              } else {
+                console.log("✅ 重新分析成功，已修復資料庫快取！");
+              }
+            });
+        }
+
       } catch (err) {
         console.error("無法取得 AI 建議:", err);
         setAiAdvice('分析系統暫時無法連線，請確認網路狀態後再試。');
       }
     }
+    
     fetchAiAdvice();
   }, [reportData]);
 
@@ -49,20 +89,18 @@ export default function CPRReport() {
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">找不到報告資料</h2>
           <p className="text-slate-500 mb-6">請先進行 CPR 練習，或從歷史紀錄查看。</p>
-          <button onClick={() => navigate('/')} className="cpr-btn-secondary">
-            返回首頁
-          </button>
+          <button onClick={() => navigate('/')} className="cpr-btn-secondary">返回首頁</button>
         </div>
       </div>
     );
   }
 
   const errorItems = [
-    { label: '手肘彎曲', count: reportData.errors.armBent || 0 },
-    { label: '身體前傾不足', count: reportData.errors.notVertical || 0 },
-    { label: '按壓位置偏移', count: reportData.errors.positionOffset || 0 },
-    { label: '按壓深度不足(<5cm)', count: reportData.errors.notDeepEnough || 0 },
-    { label: '按壓過深(>6cm)', count: reportData.errors.tooDeep || 0 }
+    { label: '手肘未打直', count: reportData.errors.armBent || 0 },
+    { label: '重心未垂直', count: reportData.errors.notVertical || 0 },
+    { label: '未垂直按壓', count: reportData.errors.positionOffset || 0 },
+    { label: '按壓過淺', count: reportData.errors.notDeepEnough || 0 },
+    { label: '按壓過深', count: reportData.errors.tooDeep || 0 }
   ];
 
   return (
@@ -72,7 +110,7 @@ export default function CPRReport() {
           <button onClick={handleBack} className="cpr-icon-btn">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-          <h1 className="cpr-title text-[#E09E75] mr-12">實作練習分析</h1>
+          <h1 className="cpr-title text-[#E09E75] mr-12">練習分析</h1>
         </header>
         
         <main className="flex-1 px-6 pb-24 relative z-10">
@@ -110,7 +148,7 @@ export default function CPRReport() {
           </div>
 
           <div className="cpr-card border-[#6B908F]/20 mb-8 bg-teal-50/30">
-            <h3 className="text-base font-bold text-[#6B908F] mb-3 tracking-wide">AI 專屬改善建議</h3>
+            <h3 className="text-base font-bold text-[#6B908F] mb-3 tracking-wide">改善建議</h3>
             <div className="text-slate-700 text-sm font-medium leading-relaxed whitespace-pre-line">
               {aiAdvice}
             </div>
