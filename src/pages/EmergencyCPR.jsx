@@ -44,16 +44,26 @@ export default function EmergencyCPR() {
           <div className="mt-2 space-y-4">
             {step === 1 && (
               <div className="flex flex-col gap-4">
-                <button onClick={() => navigate('/aed', { state: { fromEmergency: true } })} className="cpr-btn-secondary bg-[#E09E75] hover:bg-[#C77F52] text-white shadow-md py-3.5">
-                  <svg className="w-6 h-6 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <button 
+                  onClick={() => navigate('/aed', { state: { fromEmergency: true } })} 
+                  className="cpr-btn-secondary bg-[#E09E75] hover:bg-[#C77F52] text-white shadow-md py-3.5 flex items-center justify-center w-full"
+                >
+                  <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                  </svg>
                   尋找最近 AED
                 </button>
                 
-
-                  <button onClick={handleEmergencyCall} className="cpr-btn-danger bg-red-500 text-white shadow-lg w-full text-center hover:bg-red-600 border-none py-3.5">
-                    點此撥打 119
-                  </button>
-
+                <button 
+                  onClick={handleEmergencyCall} 
+                  className="cpr-btn-danger bg-red-500 hover:bg-red-600 text-white shadow-lg py-3.5 border-none flex items-center justify-center w-full"
+                >
+                  <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                  </svg>
+                  點此撥打 119
+                </button>
               </div>
             )}
 
@@ -67,10 +77,8 @@ export default function EmergencyCPR() {
 
             {step === 3 && (
               <div className="flex flex-col gap-4">
-                <button 
-                   onClick={() => navigate('/emergency-camera') }
-                   className="bg-[#A83232] text-white hover:bg-red-800 px-6 py-4 rounded-xl font-bold text-lg shadow-sm active:scale-95 transition-all w-full text-center"
-                >
+                <button onClick={() => { navigate('/emergency-camera'); }}  className="cpr-btn-secondary bg-[#A83232] hover:bg-red-800 text-white w-full shadow-md py-4">
+                  開啟相機輔助按壓
                 </button>
               </div>
             )}
