@@ -16,7 +16,6 @@ export default function HistoryRecord() {
   const isGuest = localStorage.getItem('isGuest') === 'true';
 
   useEffect(() => {
-    // 如果是訪客，就不需要去資料庫抓資料，直接結束 Loading
     if (isGuest) {
       setIsLoading(false);
       setIsQuizLoading(false);
@@ -38,7 +37,7 @@ export default function HistoryRecord() {
             accuracy: item.accuracy, 
             count: item.count, 
             bpm: item.bpm,
-            aiAdvice: item.ai_advice, // ✅ 新增：把資料庫的 AI 建議抓出來
+            aiAdvice: item.ai_advice,
             errors: { 
               armBent: item.armBent, 
               notVertical: item.notVertical, 
@@ -71,9 +70,42 @@ export default function HistoryRecord() {
     fetchRecords();
   }, [isGuest]);
 
-  const chartData = [...cprHistory].slice(0, 10).reverse(); 
+  // ==========================================
+  // 🌟 核心修改：以「天」為單位分組，並抓取最近 7 次 (有練習的日子)
+  // ==========================================
+  
+  // 1. 將所有紀錄依日期分組，並計算總分與次數
+  const dailyDataMap = {};
+  cprHistory.forEach(record => {
+    if (!dailyDataMap[record.date]) {
+      dailyDataMap[record.date] = { sum: 0, count: 0 };
+    }
+    dailyDataMap[record.date].sum += record.accuracy;
+    dailyDataMap[record.date].count += 1;
+  });
+
+  // 2. 轉成陣列並計算每一天的平均準確率
+  const dailyDataArray = Object.keys(dailyDataMap).map(date => ({
+    date: date,
+    accuracy: Math.round(dailyDataMap[date].sum / dailyDataMap[date].count)
+  }));
+
+  // 3. 依照時間先後順序排序 (舊 -> 新)
+  dailyDataArray.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // 4. 只抓取「最近 7 次」有練習的日期
+  const chartData = dailyDataArray.slice(-7);
+  
+  // 5. 計算圖表 X 軸繪製的間距與點位
   const xStep = chartData.length > 1 ? 100 / (chartData.length - 1) : 100;
   const pointsString = chartData.map((d, i) => `${i * xStep},${100 - d.accuracy}`).join(' ');
+  
+  // 確保漸層底部區域能平整地填滿
+  let polyPoints = '';
+  if (chartData.length > 0) {
+    polyPoints = `0,100 ${pointsString} ${(chartData.length - 1) * xStep},100`;
+  }
+  // ==========================================
 
   if (selectedQuiz) {
     return (
@@ -219,7 +251,7 @@ export default function HistoryRecord() {
               {activeTab === 'cpr' && (
                 <div className="animate-fade-in">
                   <div className="cpr-card border-[#E09E75]/20 !p-5 mb-6">
-                    <h4 className="text-slate-700 font-bold mb-4 text-sm">準確率趨勢</h4>
+                    <h4 className="text-slate-700 font-bold mb-4 text-sm">練習趨勢圖 (每日平均)</h4>
                     {isLoading ? (
                       <div className="w-full h-32 flex flex-col items-center justify-center text-slate-400">
                         <div className="w-8 h-8 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin mb-2"></div>
@@ -234,16 +266,17 @@ export default function HistoryRecord() {
                                 <stop offset="100%" stopColor="#E09E75" stopOpacity="0.0"/>
                               </linearGradient>
                             </defs>
-                            <polygon points={`0,100 ${pointsString} 100,100`} fill="url(#chartGradient)" />
+                            <polygon points={polyPoints} fill="url(#chartGradient)" />
                             <polyline points={pointsString} fill="none" stroke="#E09E75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                             {chartData.map((d, i) => (
-                              <g key={d.id} className="group cursor-pointer">
+                              <g key={d.date} className="group cursor-pointer">
                                 <circle cx={i * xStep} cy={100 - d.accuracy} r="3" fill="#fff" stroke="#E09E75" strokeWidth="2" />
                                 <text x={i * xStep} y={100 - d.accuracy - 10} fontSize="6" fill="#64748b" textAnchor="middle" className="font-bold opacity-0 group-hover:opacity-100 transition-opacity">{d.accuracy}%</text>
                               </g>
                             ))}
                           </svg>
                         </div>
+                        {/* X 軸標籤：顯示開始時間、中間點、最近一次練習 */}
                         <div className="flex justify-between mt-2 px-1">
                           <span className="text-[10px] text-slate-400 font-medium">{chartData[0]?.date.slice(5)}</span>
                           {chartData.length > 2 && <span className="text-[10px] text-slate-400 font-medium">{chartData[Math.floor(chartData.length/2)]?.date.slice(5)}</span>}
@@ -252,7 +285,7 @@ export default function HistoryRecord() {
                       </>
                     ) : (
                       <div className="w-full h-32 flex items-center justify-center text-slate-400 font-medium text-sm">
-                        尚無足夠數據繪製圖表
+                        尚無練習數據
                       </div>
                     )}
                   </div>
@@ -265,7 +298,6 @@ export default function HistoryRecord() {
                       cprHistory.map((record) => (
                         <div 
                           key={record.id} 
-                          // ✅ 新增：將 record.id 與 record.aiAdvice 一起傳遞給 Report 頁面
                           onClick={() => navigate('/report', { state: { id: record.id, aiAdvice: record.aiAdvice, finalBpm: record.bpm, totalPresses: record.count, errors: record.errors, date: record.date, time: record.time, accuracy: record.accuracy } })}
                           className="cpr-card !mb-0 !p-5 border-slate-100 cursor-pointer hover:border-[#E09E75]/50 active:scale-95 transition-transform"
                         >

@@ -69,12 +69,12 @@ export default function AEDMap() {
               })
               .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
               .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
-              .filter(aed => aed.distance < 3)
+              .filter(aed => aed.distance < 2)
               .sort((a, b) => a.distance - b.distance);
             // ==========================================
             
             setNearbyAeds(processedAeds);
-            if (processedAeds.length === 0) setErrorMsg("半徑3公里內找不到 AED");
+            if (processedAeds.length === 0) setErrorMsg("半徑2公里內找不到 AED");
             else setErrorMsg(null);
           } catch (error) {
             console.error("Supabase 讀取錯誤:", error);
