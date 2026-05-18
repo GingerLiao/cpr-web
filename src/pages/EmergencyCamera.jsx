@@ -15,7 +15,6 @@ export default function EmergencyCamera() {
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0);
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
-  const [depthWarning, setDepthWarning] = useState(""); 
 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
@@ -29,12 +28,10 @@ export default function EmergencyCamera() {
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
   const baselineShoulderYRef = useRef(null); 
-  const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.04;
 
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
-  const depthWarningRef = useRef("");
 
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
@@ -114,9 +111,7 @@ export default function EmergencyCamera() {
     setBpm(0);
     setTimeLeft(120); 
     setWarningMsg("請開始按壓");
-    depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
-    currentPressMaxDepthRef.current = 0.0;
     
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
@@ -248,10 +243,6 @@ export default function EmergencyCamera() {
                 if (isNotVertical) errors.push("重心未垂直");
                 if (isOffset) errors.push("未垂直按壓");
 
-                if (depthWarningRef.current === "深度不足" || depthWarningRef.current === "按壓太深") {
-                  errors.push(depthWarningRef.current);
-                }
-
                 const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
                 
                 if (now - lastWarningTimeRef.current > 500) {
@@ -260,7 +251,6 @@ export default function EmergencyCamera() {
                 }
 
                 const currentShoulderY = midShoulder.y;
-                const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
@@ -272,7 +262,6 @@ export default function EmergencyCamera() {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    let pressDepth = (lowestYRef.current - highestYRef.current) * h;
                     
                     highestYRef.current = currentShoulderY;
 
@@ -280,17 +269,6 @@ export default function EmergencyCamera() {
                         lastPressTimeRef.current = now;
                         pressCountRef.current += 1;
                         setPressCount(pressCountRef.current);
-                        let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
-                        
-                        let msg = "";
-                        if (ratio < 0.12){ 
-                          msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
-                        } else if (ratio > 0.20) {
-                          msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
-                        } else {
-                          msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
-                        }
-                        depthWarningRef.current = msg;
 
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
                         if (elapsedTime > 3) { 

@@ -23,8 +23,6 @@ const systemPrompt = "你是一個專業的醫療急救輔助系統。請根據�
       - 手肘彎曲：${results.errors.armBent} 次
       - 身體前傾不足：${results.errors.notVertical} 次
       - 按壓位置偏移：${results.errors.positionOffset} 次
-      - 按壓深度不足(<5cm)：${results.errors.notDeepEnough || 0} 次
-      - 按壓過深(>6cm)：${results.errors.tooDeep || 0} 次
       請針對上述失誤數據，輸出專業修正建議。
     `;
 

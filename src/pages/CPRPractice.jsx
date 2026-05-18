@@ -16,7 +16,6 @@ export default function CPRPractice() {
   const [bpm, setBpm] = useState(0);
   const [pressCount, setPressCount] = useState(0); 
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
-  const [depthWarning, setDepthWarning] = useState(""); 
 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
@@ -33,13 +32,11 @@ export default function CPRPractice() {
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
   const baselineShoulderYRef = useRef(null); 
-  const currentPressMaxDepthRef = useRef(0.0); 
   const threshold = 0.02;
 
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
-  const depthWarningRef = useRef("");
-  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0, tooDeep: 0 });
+  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0 });
 
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
@@ -124,15 +121,12 @@ export default function CPRPractice() {
     isTrainingRef.current = true;
     pressCountRef.current = 0;
     setPressCount(0); 
-    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, notDeepEnough: 0, tooDeep: 0 };
+    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120);
     setWarningMsg("請開始按壓");
-    setDepthWarning("");
-    depthWarningRef.current = "";
     baselineShoulderYRef.current = null;
-    currentPressMaxDepthRef.current = 0.0;
     
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
@@ -167,28 +161,23 @@ export default function CPRPractice() {
       if (bpm < 100) bpmScore = Math.max(0, 100 - (100 - bpm) * 2);
       else if (bpm > 120) bpmScore = Math.max(0, 100 - (bpm - 120) * 2);
 
-      const depthErrors = errorsLogRef.current.notDeepEnough + errorsLogRef.current.tooDeep;
-      const depthScore = Math.max(0, 100 - (depthErrors / totalPresses) * 100);
-
       const positionScore = Math.max(0, 100 - (errorsLogRef.current.positionOffset / totalPresses) * 100);
-
       const postureErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical;
       const postureScore = Math.max(0, 100 - (postureErrors / totalPresses) * 100);
 
       accuracy = Math.round(
-        (bpmScore * 0.30) + 
-        (depthScore * 0.35) + 
-        (positionScore * 0.20) + 
-        (postureScore * 0.15)
+        (bpmScore * 0.35) + 
+        (positionScore * 0.35) + 
+        (postureScore * 0.30)
       );
     }
 
     // ✅ 步驟 1：在此直接分析建議 (不扣不必要的 Token)
     let finalAdvice = "";
-    const totalErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + errorsLogRef.current.positionOffset + errorsLogRef.current.notDeepEnough + errorsLogRef.current.tooDeep;
-    
+    const totalErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + errorsLogRef.current.positionOffset;
+
     if (accuracy === 100 || totalErrors === 0) {
-      finalAdvice = '您的按壓姿勢、深度與頻率都非常完美，符合急救標準，請繼續保持！';
+      finalAdvice = '您的按壓姿勢與頻率都非常完美，符合急救標準，請繼續保持！';
     } else {
       try {
         const { data: aiData, error: aiError } = await supabase.functions.invoke('generate-cpr-advice', {
@@ -222,8 +211,6 @@ export default function CPRPractice() {
       armBent: errorsLogRef.current.armBent,
       notVertical: errorsLogRef.current.notVertical,
       positionOffset: errorsLogRef.current.positionOffset,
-      notDeepEnough: errorsLogRef.current.notDeepEnough,
-      tooDeep: errorsLogRef.current.tooDeep,
       ai_advice: finalAdvice // 🌟 一起塞進資料庫
     };
 
@@ -356,10 +343,7 @@ export default function CPRPractice() {
 
                 if (isArmBent) errors.push("手肘未打直");
                 if (isNotVertical) errors.push("重心未垂直");
-                if (isOffset) errors.push("未垂直按壓")
-                if (depthWarningRef.current === "深度不足" || depthWarningRef.current === "按壓太深") {
-                  errors.push(depthWarningRef.current);
-                }
+                if (isOffset) errors.push("未垂直按壓");
 
                 const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
 
@@ -369,7 +353,6 @@ export default function CPRPractice() {
                 }
 
                 const currentShoulderY = midShoulder.y;
-                const shoulderWidth = Math.hypot((ls.x - rs.x) * w, (ls.y - rs.y) * h);
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
@@ -381,8 +364,6 @@ export default function CPRPractice() {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     positionStateRef.current = "up";
-                    
-                    let pressDepth = (lowestYRef.current - highestYRef.current) * h;
                     highestYRef.current = currentShoulderY;
 
                     if (now - lastPressTimeRef.current > 250) { 
@@ -397,23 +378,6 @@ export default function CPRPractice() {
                           if (isOffset) errorsLogRef.current.positionOffset += 1;
                         }
 
-                        let ratio = shoulderWidth > 0 ? (pressDepth / shoulderWidth) : 0;
-                        let msg = "";
-                        if (ratio < 0.12){ 
-                          if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
-                            errorsLogRef.current.notDeepEnough += 1;
-                          }
-                          msg = `深度不足! (比例: ${ratio.toFixed(2)})`;
-                        } else if (ratio > 0.20) {
-                          if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
-                            errorsLogRef.current.tooDeep += 1; 
-                          }
-                          msg = `按壓過深! (比例: ${ratio.toFixed(2)})`;
-                        } else {
-                          msg = `深度良好! (比例: ${ratio.toFixed(2)})`;
-                        }
-                        depthWarningRef.current = msg;
-                        
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
                         if (elapsedTime > 3) { 
                            setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
@@ -489,12 +453,6 @@ export default function CPRPractice() {
           canvasCtx.fillStyle = "rgba(255, 80, 80, 0.9)";
           canvasCtx.textAlign = "center";
           canvasCtx.fillText("按壓位置", centerX, patientY + 60 * S);
-
-          if (isTrainingRef.current && depthWarningRef.current !== "") {
-            canvasCtx.font = `bold ${26 * S}px sans-serif`;
-            canvasCtx.fillStyle = depthWarningRef.current.includes("良好") ? "#00FF00" : "#FF0000";
-            canvasCtx.fillText(depthWarningRef.current, centerX, patientY + 100 * S);
-          }
 
           canvasCtx.restore();
         }
