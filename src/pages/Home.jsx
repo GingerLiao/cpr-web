@@ -7,6 +7,8 @@ export default function Home({ session, isGuest }) {
   const [showProfileModal, setShowProfileModal] = useState(false); 
 
   const handleLogout = async () => {
+    const ok = window.confirm('確定要登出嗎？');
+    if (!ok) return;
     await supabase.auth.signOut();
     localStorage.removeItem('isGuest');
     window.location.href = "/login";

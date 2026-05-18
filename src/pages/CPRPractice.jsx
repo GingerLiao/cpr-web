@@ -337,7 +337,7 @@ export default function CPRPractice() {
                 }
               } else {
                 let errors = [];
-                let isArmBent = calculateAngle(ls, landmarks[13], lw) < 160 || calculateAngle(rs, landmarks[14], rw) < 160;
+                let isArmBent = calculateAngle(ls, landmarks[13], lw) < 170 || calculateAngle(rs, landmarks[14], rw) < 170;
                 let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
 
