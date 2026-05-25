@@ -17,7 +17,16 @@ export default function CPRReport() {
       if (!reportData) return;
 
       // 1. 滿分防呆 (不扣 Token)
-      const totalErrors = (reportData.errors?.armBent || 0) + (reportData.errors?.notVertical || 0) + (reportData.errors?.positionOffset || 0);
+      const totalErrors = (reportData.errors?.armBent || 0)
+        + (reportData.errors?.notVertical || 0)
+        + (reportData.errors?.positionOffset || 0)
+        + (reportData.errors?.depthTooShallow || 0)
+        + (reportData.errors?.depthTooDeep || 0);
+      const totalPresses = reportData.count || 0;
+      if (totalPresses === 0 && totalErrors === 0 && reportData.accuracy === 0) {
+        setAiAdvice('未能準確偵測動作，請再練習一次');
+        return;
+      }
       if (reportData.accuracy === 100 || totalErrors === 0) {
         setAiAdvice('您的按壓姿勢與頻率都非常完美，符合急救標準，請繼續保持！');
         return;
@@ -97,8 +106,10 @@ export default function CPRReport() {
 
   const errorItems = [
     { label: '手肘未打直', count: reportData.errors.armBent || 0 },
-    { label: '重心未垂直', count: reportData.errors.notVertical || 0 },
-    { label: '未垂直按壓', count: reportData.errors.positionOffset || 0 }
+    { label: '身體前傾不足', count: reportData.errors.notVertical || 0 },
+    { label: '按壓位置偏移', count: reportData.errors.positionOffset || 0 },
+    { label: '按壓過淺', count: reportData.errors.depthTooShallow || 0 },
+    { label: '按壓過深', count: reportData.errors.depthTooDeep || 0 }
   ];
 
   return (

@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
 export default function Home({ session, isGuest }) {
   const navigate = useNavigate();
   const [showProfileModal, setShowProfileModal] = useState(false); 
+  const [forearmLength, setForearmLength] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
+  const [isSavingForearm, setIsSavingForearm] = useState(false);
 
   const handleLogout = async () => {
     const ok = window.confirm('確定要登出嗎？');
@@ -12,6 +15,56 @@ export default function Home({ session, isGuest }) {
     await supabase.auth.signOut();
     localStorage.removeItem('isGuest');
     window.location.href = "/login";
+  };
+
+  useEffect(() => {
+    async function loadForearmLength() {
+      if (isGuest) {
+        const saved = localStorage.getItem('guest_forearm_length_cm');
+        if (saved) {
+          setForearmLength(saved);
+        }
+        return;
+      }
+      if (!session?.user) return;
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!error && data?.user?.user_metadata?.forearm_length_cm) {
+          setForearmLength(data.user.user_metadata.forearm_length_cm);
+        }
+      } catch (err) {
+        console.error('載入手臂長度失敗:', err);
+      }
+    }
+    loadForearmLength();
+  }, [session, isGuest]);
+
+  const handleSaveForearmLength = async (e) => {
+    e.preventDefault();
+    const value = parseFloat(forearmLength);
+    if (Number.isNaN(value) || value <= 0) {
+      setSaveStatus('請輸入手臂長度(肩膀到手腕)（公分）');
+      return;
+    }
+
+    setIsSavingForearm(true);
+    try {
+      if (isGuest) {
+        localStorage.setItem('guest_forearm_length_cm', value.toString());
+      } else {
+        const { data, error } = await supabase.auth.updateUser({
+          data: { forearm_length_cm: value }
+        });
+        if (error) throw error;
+      }
+      setSaveStatus(isGuest ? '手臂長度已暫存於本機瀏覽器' : '手臂長度已儲存');
+      setForearmLength(value);
+    } catch (err) {
+      console.error('儲存手臂長度失敗:', err);
+      setSaveStatus('儲存失敗，請稍後再試。');
+    } finally {
+      setIsSavingForearm(false);
+    }
   };
 
   const userEmail = session?.user?.email || "";
@@ -68,9 +121,29 @@ export default function Home({ session, isGuest }) {
               {isGuest ? (
                 <div className="text-center py-2">
                   <div className="bg-amber-50 text-amber-700 p-4 rounded-xl text-sm mb-6 border border-amber-200/50">
-                    您目前以 <strong className="font-bold">訪客身分</strong> 瀏覽。<br/>
+                    您目前以 <strong className="font-bold">訪客身分</strong> 瀏覽。<br />
                     <span className="text-xs mt-1 block text-amber-600">⚠️ 練習紀錄與題庫成績將不會儲存至雲端</span>
                   </div>
+                  <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
+                    <label className="block text-sm font-bold text-slate-700">
+                      前臂長度 (公分)
+                      <input
+                        type="number"
+                        min="30"
+                        max="100"
+                        step="0.1"
+                        value={forearmLength}
+                        onChange={(e) => setForearmLength(e.target.value)}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#6B908F]/50"
+                        placeholder="例如 55.5"
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500">訪客輸入僅暫存於本機瀏覽器，不會儲存至雲端。</p>
+                    {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
+                    <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full">
+                      {isSavingForearm ? '儲存中...' : '暫存手臂長度'}
+                    </button>
+                  </form>
                   <button onClick={() => { localStorage.removeItem('isGuest'); window.location.href = "/login"; }} className="cpr-btn-secondary w-full">
                     前往登入 / 註冊
                   </button>
@@ -86,6 +159,26 @@ export default function Home({ session, isGuest }) {
                       <span className="text-[11px] text-[#6B908F] font-bold bg-[#6B908F]/10 px-2.5 py-1 rounded-full">已登入正式會員</span>
                     </div>
                   </div>
+                  <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
+                    <label className="block text-sm font-bold text-slate-700">
+                      手臂長度 (公分)
+                      <input
+                        type="number"
+                        min="30"
+                        max="100"
+                        step="0.1"
+                        value={forearmLength}
+                        onChange={(e) => setForearmLength(e.target.value)}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#6B908F]/50"
+                        placeholder="例如 55.5"
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500">此數值將用於 CPR 深度偵測校正。</p>
+                    {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
+                    <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full">
+                      {isSavingForearm ? '儲存中...' : '儲存手臂長度'}
+                    </button>
+                  </form>
                   <button onClick={handleLogout} className="cpr-btn-danger w-full">登出系統</button>
                 </div>
               )}

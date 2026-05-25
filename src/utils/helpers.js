@@ -3,20 +3,32 @@ import L from 'leaflet';
 
 export const TARGET_BPM = 110; 
 
-export function calculateAngle(a, b, c) {
-  const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+export function calculateAngle(a, b, c, width, height) {
+  const ax = a.x * width, ay = a.y * height;
+  const bx = b.x * width, by = b.y * height;
+  const cx = c.x * width, cy = c.y * height;
+
+  const radians = Math.atan2(cy - by, cx - bx) - Math.atan2(ay - by, ax - bx);
   let angle = Math.abs(radians * 180.0 / Math.PI);
   if (angle > 180.0) angle = 360 - angle;
   return angle;
 }
 
-export function calculateCenterVerticalAngle(ls, rs, lw, rw) {
+export function calculateCenterVerticalAngle(ls, rs, lw, rw, width, height) {
   const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
   const midWrist = { x: (lw.x + rw.x) / 2, y: (lw.y + rw.y) / 2 };
-  const dx = midWrist.x - midShoulder.x;
-  const dy = midWrist.y - midShoulder.y;
+
+  const dx = (midWrist.x - midShoulder.x) * width;
+  const dy = (midWrist.y - midShoulder.y) * height;
   const angle = Math.abs(Math.atan2(dy, dx) * 180.0 / Math.PI);
+  
   return { angle, midShoulder, midWrist };
+}
+
+export function calculateDistancePx(a, b, width, height) {
+  const dx = (a.x - b.x) * width;
+  const dy = (a.y - b.y) * height;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 export function getDistance(lat1, lon1, lat2, lon2) {

@@ -1,9 +1,14 @@
+declare const Deno: {
+  env: { get(name: string): string | undefined }
+  serve(handler: (req: Request) => Promise<Response> | Response): void
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -47,11 +52,12 @@ const systemPrompt = "你是一個專業的醫療急救輔助系統。請根據�
       status: 200,
     })
 
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
     // 🌟 修正 2：改成回傳 200，並把錯誤訊息直接送到前端畫面上！
-    return new Response(JSON.stringify({ advice: `【後端真實錯誤】: ${error.message}` }), {
+    return new Response(JSON.stringify({ advice: `【後端真實錯誤】: ${errorMessage}` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200, 
+      status: 200,
     })
   }
 })

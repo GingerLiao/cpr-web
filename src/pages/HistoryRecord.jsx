@@ -41,7 +41,9 @@ export default function HistoryRecord() {
             errors: { 
               armBent: item.armBent, 
               notVertical: item.notVertical, 
-              positionOffset: item.positionOffset
+              positionOffset: item.positionOffset,
+              depthTooShallow: item.depthTooShallow,
+              depthTooDeep: item.depthTooDeep
             }
           })));
         }

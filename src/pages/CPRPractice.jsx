@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { supabase } from '../supabaseClient';
-import { calculateAngle, calculateCenterVerticalAngle, TARGET_BPM } from '../utils/helpers';
+import { calculateAngle, calculateCenterVerticalAngle, calculateDistancePx, TARGET_BPM } from '../utils/helpers';
 
 export default function CPRPractice() {
   const navigate = useNavigate();
@@ -14,12 +14,14 @@ export default function CPRPractice() {
   const requestRef = useRef(null);
 
   const [bpm, setBpm] = useState(0);
-  const [pressCount, setPressCount] = useState(0); 
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
+  const [compressionDepth, setCompressionDepth] = useState(null);
 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
   const [facingMode, setFacingMode] = useState("environment");
+  const [forearmLengthCm, setForearmLengthCm] = useState(null);
+  const forearmLengthCmRef = useRef(null);
   
   // ✅ 新增：用來顯示分析中的過場動畫
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -31,12 +33,15 @@ export default function CPRPractice() {
   const positionStateRef = useRef("up");
   const highestYRef = useRef(1.0);
   const lowestYRef = useRef(0.0);
-  const baselineShoulderYRef = useRef(null); 
-  const threshold = 0.02;
+  const highestWristYRef = useRef(1.0);
+  const lowestWristYRef = useRef(0.0);
+  const deepestPostureRef = useRef({ isArmBent: false, isNotVertical: false, isOffset: false });
+  const threshold = 0.04;
 
-  const lastWarningTimeRef = useRef(0); 
+  const lastWarningTimeRef = useRef(0);
   const lastPressTimeRef = useRef(0);
-  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0 });
+  const bpmRef = useRef(0);
+  const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 });
 
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
@@ -67,6 +72,22 @@ export default function CPRPractice() {
         audioCtxRef.current.close().catch(err => console.log(err));
       }
     };
+  }, []);
+
+  useEffect(() => {
+    async function loadForearmLength() {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!error && data?.user?.user_metadata?.forearm_length_cm) {
+          const val = Number(data.user.user_metadata.forearm_length_cm);
+          setForearmLengthCm(val);
+          forearmLengthCmRef.current = val;
+        }
+      } catch (err) {
+        console.error('載入手臂長度失敗:', err);
+      }
+    }
+    loadForearmLength();
   }, []);
 
   useEffect(() => {
@@ -120,13 +141,19 @@ export default function CPRPractice() {
     setIsTraining(true);
     isTrainingRef.current = true;
     pressCountRef.current = 0;
-    setPressCount(0); 
-    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0 };
+    bpmRef.current = 0;
+    setCompressionDepth(null);
+    errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 };
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120);
     setWarningMsg("請開始按壓");
-    baselineShoulderYRef.current = null;
+    positionStateRef.current = "up";
+    highestYRef.current = 1.0;
+    lowestYRef.current = 0.0;
+    highestWristYRef.current = 1.0;
+    lowestWristYRef.current = 0.0;
+    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
     
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
@@ -156,13 +183,15 @@ export default function CPRPractice() {
 
     let accuracy = 0;
     const totalPresses = pressCountRef.current;
-    if (totalPresses > 0 && bpm > 0) {
+    const finalBpm = bpmRef.current;
+    if (totalPresses > 0 && finalBpm > 0) {
       let bpmScore = 100;
-      if (bpm < 100) bpmScore = Math.max(0, 100 - (100 - bpm) * 2);
-      else if (bpm > 120) bpmScore = Math.max(0, 100 - (bpm - 120) * 2);
+      if (finalBpm < 100) bpmScore = Math.max(0, 100 - (100 - finalBpm) * 2);
+      else if (finalBpm > 120) bpmScore = Math.max(0, 100 - (finalBpm - 120) * 2);
 
+      const depthErrors = errorsLogRef.current.depthTooShallow + errorsLogRef.current.depthTooDeep;
       const positionScore = Math.max(0, 100 - (errorsLogRef.current.positionOffset / totalPresses) * 100);
-      const postureErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical;
+      const postureErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + depthErrors;
       const postureScore = Math.max(0, 100 - (postureErrors / totalPresses) * 100);
 
       accuracy = Math.round(
@@ -174,21 +203,23 @@ export default function CPRPractice() {
 
     // ✅ 步驟 1：在此直接分析建議 (不扣不必要的 Token)
     let finalAdvice = "";
-    const totalErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + errorsLogRef.current.positionOffset;
+    const totalErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + errorsLogRef.current.positionOffset + errorsLogRef.current.depthTooShallow + errorsLogRef.current.depthTooDeep;
 
-    if (accuracy === 100 || totalErrors === 0) {
+    if (totalPresses === 0 && totalErrors === 0 && accuracy === 0) {
+      finalAdvice = '未能準確偵測動作，請再練習一次';
+    } else if (accuracy === 100 || totalErrors === 0) {
       finalAdvice = '您的按壓姿勢與頻率都非常完美，符合急救標準，請繼續保持！';
     } else {
       try {
         const { data: aiData, error: aiError } = await supabase.functions.invoke('generate-cpr-advice', {
-          body: { 
-            results: { 
-              accuracy: accuracy, 
-              totalPresses: totalPresses, 
-              finalBpm: bpm, 
-              errors: errorsLogRef.current 
-            } 
-          } 
+          body: {
+            results: {
+              accuracy: accuracy,
+              totalPresses: totalPresses,
+              finalBpm: finalBpm,
+              errors: errorsLogRef.current
+            }
+          }
         });
         if (!aiError && aiData) {
           finalAdvice = aiData.advice;
@@ -200,36 +231,51 @@ export default function CPRPractice() {
       }
     }
 
-    // ✅ 步驟 2：將分析結果與其他數據一併建立
+    const reportState = {
+      aiAdvice: finalAdvice,
+      finalBpm: finalBpm,
+      totalPresses: pressCountRef.current,
+      errors: { ...errorsLogRef.current },
+      date: dateStr,
+      time: timeStr,
+      accuracy: accuracy,
+      fromPractice: true
+    };
+
+    if (!user) {
+      setIsAnalyzing(false);
+      navigate('/report', { state: reportState });
+      return;
+    }
+
     const recordData = {
-      user_id: user?.id,
+      user_id: user.id,
       date: dateStr,
       time: timeStr,
       accuracy: accuracy,
       count: pressCountRef.current,
-      bpm: bpm,
+      bpm: finalBpm,
       armBent: errorsLogRef.current.armBent,
       notVertical: errorsLogRef.current.notVertical,
       positionOffset: errorsLogRef.current.positionOffset,
-      ai_advice: finalAdvice // 🌟 一起塞進資料庫
+      depthTooShallow: errorsLogRef.current.depthTooShallow,
+      depthTooDeep: errorsLogRef.current.depthTooDeep,
+      ai_advice: finalAdvice
     };
 
     try {
       const { data, error } = await supabase.from('CprRecord').insert([recordData]).select();
       if (error) throw error;
-      
+
       const newRecordId = data && data.length > 0 ? data[0].id : null;
-      console.log('紀錄與分析建議已合併儲存');
-      
-      setIsAnalyzing(false); // 關閉載入動畫
-      
-      // ✅ 步驟 3：帶入所有資料跳轉至純展示的報告頁
-      navigate('/report', { state: { id: newRecordId, aiAdvice: finalAdvice, finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
+      setIsAnalyzing(false);
+      navigate('/report', { state: { ...reportState, id: newRecordId } });
 
     } catch (error) {
-      console.error('儲存失敗:', error);
+      console.error('儲存失敗，詳細錯誤:', error);
       setIsAnalyzing(false);
-      navigate('/report', { state: { aiAdvice: finalAdvice, finalBpm: bpm, totalPresses: pressCountRef.current, errors: errorsLogRef.current, date: dateStr, time: timeStr, accuracy: accuracy, fromPractice: true } });
+      alert(`練習紀錄儲存失敗\n錯誤：${error?.message || JSON.stringify(error)}\n\n請截圖此訊息回報問題。`);
+      navigate('/report', { state: reportState });
     }
   };
 
@@ -322,11 +368,7 @@ export default function CPRPractice() {
 
             if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
               const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-              
-              if (baselineShoulderYRef.current === null || midShoulder.y < baselineShoulderYRef.current) {
-                baselineShoulderYRef.current = midShoulder.y;
-              }
-              
+
               const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
               const now= Date.now();
 
@@ -336,14 +378,17 @@ export default function CPRPractice() {
                   lastWarningTimeRef.current = now;
                 }
               } else {
+                const shoulderWidth = Math.abs(ls.x - rs.x);
                 let errors = [];
-                let isArmBent = calculateAngle(ls, landmarks[13], lw) < 170 || calculateAngle(rs, landmarks[14], rw) < 170;
-                let isNotVertical = centerVertAngle < 80 || centerVertAngle > 100;
-                let isOffset = Math.abs(midWrist.x - midShoulder.x) > 0.15;
+                const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, z: (ls.z + rs.z) / 2 };
+                const midWrist = { x: (lw.x + rw.x) / 2, y: (lw.y + rw.y) / 2, z: (lw.z + rw.z) / 2 };
+                let isArmBent = calculateAngle(ls, landmarks[13], lw, w, h) < 165 || calculateAngle(rs, landmarks[14], rw, w, h) < 165;
+                let isNotVertical = (midShoulder.z - midWrist.z) > 0.15;
+                let isOffset = Math.abs(midWrist.x - midShoulder.x) > (shoulderWidth * 0.40);
 
                 if (isArmBent) errors.push("手肘未打直");
-                if (isNotVertical) errors.push("重心未垂直");
-                if (isOffset) errors.push("未垂直按壓");
+                if (isNotVertical) errors.push("身體前傾不足");
+                if (isOffset) errors.push("按壓位置偏移");
 
                 const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
 
@@ -356,31 +401,72 @@ export default function CPRPractice() {
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-                  if (currentShoulderY > highestYRef.current + threshold) { 
-                    positionStateRef.current = "down"; 
-                    lowestYRef.current = currentShoulderY; 
+                  if (midWrist.y < highestWristYRef.current) highestWristYRef.current = midWrist.y;
+                  if (currentShoulderY > highestYRef.current + threshold) {
+                    positionStateRef.current = "down";
+                    lowestYRef.current = currentShoulderY;
+                    lowestWristYRef.current = midWrist.y;
+                    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
+                  if (midWrist.y > lowestWristYRef.current) lowestWristYRef.current = midWrist.y;
+                  if (isArmBent) deepestPostureRef.current.isArmBent = true;
+                  if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
+                  if (isOffset) deepestPostureRef.current.isOffset = true;
                   if (currentShoulderY < lowestYRef.current - threshold) {
+
+                    const pressDepthPx = (lowestWristYRef.current - highestWristYRef.current) * h;
                     positionStateRef.current = "up";
                     highestYRef.current = currentShoulderY;
+                    highestWristYRef.current = midWrist.y;
 
-                    if (now - lastPressTimeRef.current > 250) { 
+                    if (now - lastPressTimeRef.current > 250) {
                         lastPressTimeRef.current = now;
-                        
-                        pressCountRef.current += 1;
-                        setPressCount(pressCountRef.current);
 
-                        if (typeof errorsLogRef !== 'undefined' && errorsLogRef.current) {
-                          if (isArmBent) errorsLogRef.current.armBent += 1;
-                          if (isNotVertical) errorsLogRef.current.notVertical += 1;
-                          if (isOffset) errorsLogRef.current.positionOffset += 1;
+                        pressCountRef.current += 1;
+
+                        const { isArmBent: bentAtBottom, isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
+
+                        let depthIssue = null;
+
+                        if (forearmLengthCmRef.current) {
+                          const leftArmPx = calculateDistancePx(ls, lw, w, h);
+                          const rightArmPx = calculateDistancePx(rs, rw, w, h);
+                          const armPixels = Math.max(leftArmPx, rightArmPx);
+
+                          if (armPixels > 0) {
+                            const roundedDepth = Math.round((pressDepthPx / (armPixels / forearmLengthCmRef.current)) * 10) / 10;
+                            setCompressionDepth(roundedDepth);
+
+                            if (roundedDepth < 5.0) depthIssue = "按壓過淺";
+                            else if (roundedDepth > 6.0) depthIssue = "按壓過深";
+                          }
+                        }
+
+                        if (bentAtBottom) errorsLogRef.current.armBent += 1;
+                        if (notVerticalAtBottom) errorsLogRef.current.notVertical += 1;
+                        if (offsetAtBottom) errorsLogRef.current.positionOffset += 1;
+                        if (depthIssue === "按壓過淺") errorsLogRef.current.depthTooShallow += 1;
+                        if (depthIssue === "按壓過深") errorsLogRef.current.depthTooDeep += 1;
+
+                        const bottomErrors = [
+                          bentAtBottom && "手肘未打直",
+                          notVerticalAtBottom && "身體前傾不足",
+                          offsetAtBottom && "按壓位置偏移",
+                        ].filter(Boolean);
+
+                        if (depthIssue) {
+                          const completionMessage = bottomErrors.length > 0 ? `${bottomErrors.join(' | ')} | ${depthIssue}` : depthIssue;
+                          setWarningMsg(completionMessage);
+                          lastWarningTimeRef.current = now;
                         }
 
                         const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-                        if (elapsedTime > 3) { 
-                           setBpm(Math.floor((pressCountRef.current / elapsedTime) * 60));
+                        if (elapsedTime > 3) {
+                           const newBpm = Math.floor((pressCountRef.current / elapsedTime) * 60);
+                           bpmRef.current = newBpm;
+                           setBpm(newBpm);
                         }
                     }
                   }
@@ -509,7 +595,22 @@ export default function CPRPractice() {
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none">
+        <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none gap-3">
+          <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-4 py-3 flex items-center justify-center text-white shadow-lg border border-white/10">
+            <span className="text-xs text-slate-200 mr-2">深度</span>
+            {forearmLengthCm
+              ? <span className={`text-base font-bold font-mono tracking-wider ${
+                  compressionDepth == null ? 'text-slate-400' :
+                  compressionDepth < 5.0 ? 'text-yellow-400' :
+                  compressionDepth > 6.0 ? 'text-red-400' :
+                  'text-green-400'
+                }`}>
+                  {compressionDepth != null ? `${compressionDepth.toFixed(1)} cm` : '--'}
+                </span>
+              : <span className="text-xs text-yellow-400 font-bold">未設定臂長</span>
+            }
+          </div>
+
           <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-5 py-3 flex items-center justify-center text-white shadow-lg border border-white/10 w-36">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2.5"></span>
             <span className="text-base font-bold text-rose-400 font-mono tracking-wider">{formatTime(timeLeft)}</span>
