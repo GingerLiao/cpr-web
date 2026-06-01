@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient';
 export default function Home({ session, isGuest }) {
   const navigate = useNavigate();
   const [showProfileModal, setShowProfileModal] = useState(false); 
-  const [forearmLength, setForearmLength] = useState("");
+  const [shoulderWidth, setShoulderWidth] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [isSavingForearm, setIsSavingForearm] = useState(false);
 
@@ -18,49 +18,47 @@ export default function Home({ session, isGuest }) {
   };
 
   useEffect(() => {
-    async function loadForearmLength() {
+    async function loadShoulderWidth() {
       if (isGuest) {
-        const saved = localStorage.getItem('guest_forearm_length_cm');
-        if (saved) {
-          setForearmLength(saved);
-        }
+        const saved = localStorage.getItem('guest_shoulder_width_cm');
+        if (saved) setShoulderWidth(saved);
         return;
       }
       if (!session?.user) return;
       try {
         const { data, error } = await supabase.auth.getUser();
-        if (!error && data?.user?.user_metadata?.forearm_length_cm) {
-          setForearmLength(data.user.user_metadata.forearm_length_cm);
+        if (!error && data?.user?.user_metadata?.shoulder_width_cm) {
+          setShoulderWidth(data.user.user_metadata.shoulder_width_cm);
         }
       } catch (err) {
-        console.error('載入手臂長度失敗:', err);
+        console.error('載入肩膀寬度失敗:', err);
       }
     }
-    loadForearmLength();
+    loadShoulderWidth();
   }, [session, isGuest]);
 
   const handleSaveForearmLength = async (e) => {
     e.preventDefault();
-    const value = parseFloat(forearmLength);
+    const value = parseFloat(shoulderWidth);
     if (Number.isNaN(value) || value <= 0) {
-      setSaveStatus('請輸入手臂長度(肩膀到手腕)（公分）');
+      setSaveStatus('請輸入有效的肩膀寬度（公分）');
       return;
     }
 
     setIsSavingForearm(true);
     try {
       if (isGuest) {
-        localStorage.setItem('guest_forearm_length_cm', value.toString());
+        localStorage.setItem('guest_shoulder_width_cm', value.toString());
       } else {
         const { data, error } = await supabase.auth.updateUser({
-          data: { forearm_length_cm: value }
+          data: { shoulder_width_cm: value }
         });
         if (error) throw error;
       }
-      setSaveStatus(isGuest ? '手臂長度已暫存於本機瀏覽器' : '手臂長度已儲存');
-      setForearmLength(value);
+      setSaveStatus(isGuest ? '肩膀寬度已暫存於本機瀏覽器' : '肩膀寬度已儲存');
+      setShoulderWidth(value);
     } catch (err) {
-      console.error('儲存手臂長度失敗:', err);
+      console.error('儲存肩膀寬度失敗:', err);
       setSaveStatus('儲存失敗，請稍後再試。');
     } finally {
       setIsSavingForearm(false);
@@ -126,22 +124,22 @@ export default function Home({ session, isGuest }) {
                   </div>
                   <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
                     <label className="block text-sm font-bold text-slate-700">
-                      前臂長度 (公分)
+                      肩膀寬度 (公分)
                       <input
                         type="number"
-                        min="30"
-                        max="100"
+                        min="20"
+                        max="60"
                         step="0.1"
-                        value={forearmLength}
-                        onChange={(e) => setForearmLength(e.target.value)}
+                        value={shoulderWidth}
+                        onChange={(e) => setShoulderWidth(e.target.value)}
                         className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#6B908F]/50"
-                        placeholder="例如 55.5"
+                        placeholder="例如 40"
                       />
                     </label>
                     <p className="text-xs text-slate-500">訪客輸入僅暫存於本機瀏覽器，不會儲存至雲端。</p>
                     {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
                     <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full">
-                      {isSavingForearm ? '儲存中...' : '暫存手臂長度'}
+                      {isSavingForearm ? '儲存中...' : '暫存肩膀寬度'}
                     </button>
                   </form>
                   <button onClick={() => { localStorage.removeItem('isGuest'); window.location.href = "/login"; }} className="cpr-btn-secondary w-full">
@@ -161,22 +159,22 @@ export default function Home({ session, isGuest }) {
                   </div>
                   <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
                     <label className="block text-sm font-bold text-slate-700">
-                      手臂長度 (公分)
+                      肩膀寬度 (公分)
                       <input
                         type="number"
-                        min="30"
-                        max="100"
+                        min="20"
+                        max="60"
                         step="0.1"
-                        value={forearmLength}
-                        onChange={(e) => setForearmLength(e.target.value)}
+                        value={shoulderWidth}
+                        onChange={(e) => setShoulderWidth(e.target.value)}
                         className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#6B908F]/50"
-                        placeholder="例如 55.5"
+                        placeholder="例如 40"
                       />
                     </label>
                     <p className="text-xs text-slate-500">此數值將用於 CPR 深度偵測校正。</p>
                     {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
                     <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full">
-                      {isSavingForearm ? '儲存中...' : '儲存手臂長度'}
+                      {isSavingForearm ? '儲存中...' : '儲存肩膀寬度'}
                     </button>
                   </form>
                   <button onClick={handleLogout} className="cpr-btn-danger w-full">登出系統</button>

@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { supabase } from '../supabaseClient';
-import { calculateAngle, calculateCenterVerticalAngle, calculateDistancePx, TARGET_BPM } from '../utils/helpers';
+import { calculateAngle, calculateCenterVerticalAngle, TARGET_BPM } from '../utils/helpers';
 
 export default function EmergencyCamera() {
   const navigate = useNavigate();
@@ -18,8 +18,8 @@ export default function EmergencyCamera() {
 
   const [isTraining, setIsTraining] = useState(false);
   const [facingMode, setFacingMode] = useState("environment");
-  const [forearmLengthCm, setForearmLengthCm] = useState(null);
-  const forearmLengthCmRef = useRef(null);
+  const [shoulderWidthCm, setShoulderWidthCm] = useState(null);
+  const shoulderWidthCmRef = useRef(null);
 
   const facingModeRef = useRef("environment"); 
   const isTrainingRef = useRef(false);
@@ -28,8 +28,9 @@ export default function EmergencyCamera() {
   const lowestYRef = useRef(0.0);
   const highestWristYRef = useRef(1.0);
   const lowestWristYRef = useRef(0.0);
+  const lockedShoulderWidthPxRef = useRef(0);
   const deepestPostureRef = useRef({ isArmBent: false, isNotVertical: false, isOffset: false });
-  const threshold = 0.04;
+  const threshold = 0.025;
 
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
@@ -62,19 +63,19 @@ export default function EmergencyCamera() {
   }, []);
 
   useEffect(() => {
-    async function loadForearmLength() {
+    async function loadShoulderWidth() {
       try {
         const { data, error } = await supabase.auth.getUser();
-        if (!error && data?.user?.user_metadata?.forearm_length_cm) {
-          const val = Number(data.user.user_metadata.forearm_length_cm);
-          setForearmLengthCm(val);
-          forearmLengthCmRef.current = val;
+        if (!error && data?.user?.user_metadata?.shoulder_width_cm) {
+          const val = Number(data.user.user_metadata.shoulder_width_cm);
+          setShoulderWidthCm(val);
+          shoulderWidthCmRef.current = val;
         }
       } catch (err) {
-        console.error('載入手臂長度失敗:', err);
+        console.error('載入肩膀寬度失敗:', err);
       }
     }
-    loadForearmLength();
+    loadShoulderWidth();
   }, []);
 
   useEffect(() => {
@@ -224,7 +225,7 @@ export default function EmergencyCamera() {
 
             if (isTrainingRef.current && ls && lw && (ls.visibility || 1) > 0.5 && (lw.visibility || 1) > 0.5) {
               const { angle: centerVertAngle, midShoulder, midWrist } = calculateCenterVerticalAngle(ls, rs, lw, rw);
-              const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.25 && midShoulder.y <= 0.65;
+              const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.2 && midShoulder.y <= 0.75;
               const now = Date.now();
 
               if (!isInTargetBox) {
@@ -246,27 +247,27 @@ export default function EmergencyCamera() {
                 if (isNotVertical) errors.push("身體前傾不足");
                 if (isOffset) errors.push("按壓位置偏移");
 
-                const newMsg = errors.length > 0 ? errors.join(" | ") : "姿勢完美！";
-                
-                if (now - lastWarningTimeRef.current > 500) {
-                  setWarningMsg(newMsg);
+                if (now - lastWarningTimeRef.current > 500 && errors.length > 0) {
+                  setWarningMsg(errors.join(" | "));
                   lastWarningTimeRef.current = now;
                 }
 
                 const currentShoulderY = midShoulder.y;
+                const currentWristY = midWrist.y;
 
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
-                  if (midWrist.y < highestWristYRef.current) highestWristYRef.current = midWrist.y;
+                  if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
+                  lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
                   if (currentShoulderY > highestYRef.current + threshold) {
                     positionStateRef.current = "down";
                     lowestYRef.current = currentShoulderY;
-                    lowestWristYRef.current = midWrist.y;
+                    lowestWristYRef.current = currentWristY;
                     deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
-                  if (midWrist.y > lowestWristYRef.current) lowestWristYRef.current = midWrist.y;
+                  if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
                   if (isArmBent) deepestPostureRef.current.isArmBent = true;
                   if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
                   if (isOffset) deepestPostureRef.current.isOffset = true;
@@ -274,7 +275,7 @@ export default function EmergencyCamera() {
                     const pressDepthPx = (lowestWristYRef.current - highestWristYRef.current) * h;
                     positionStateRef.current = "up";
                     highestYRef.current = currentShoulderY;
-                    highestWristYRef.current = midWrist.y;
+                    highestWristYRef.current = currentWristY;
 
                     if (now - lastPressTimeRef.current > 250) {
                         lastPressTimeRef.current = now;
@@ -282,12 +283,10 @@ export default function EmergencyCamera() {
                         const { isArmBent: bentAtBottom, isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
 
                         let depthIssue = null;
-                        if (forearmLengthCmRef.current) {
-                          const leftArmPx = calculateDistancePx(ls, lw, w, h);
-                          const rightArmPx = calculateDistancePx(rs, rw, w, h);
-                          const armPixels = Math.max(leftArmPx, rightArmPx);
-                          if (armPixels > 0) {
-                            const roundedDepth = Math.round((pressDepthPx / (armPixels / forearmLengthCmRef.current)) * 10) / 10;
+                        if (shoulderWidthCmRef.current) {
+                          const shoulderWidthPx = lockedShoulderWidthPxRef.current;
+                          if (shoulderWidthPx > 0) {
+                            const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
                             setCompressionDepth(roundedDepth);
                             if (roundedDepth < 5.0) depthIssue = "按壓過淺";
                             else if (roundedDepth > 6.0) depthIssue = "按壓過深";
@@ -300,11 +299,10 @@ export default function EmergencyCamera() {
                           offsetAtBottom && "按壓位置偏移",
                         ].filter(Boolean);
 
-                        if (depthIssue) {
-                          const completionMessage = bottomErrors.length > 0 ? `${bottomErrors.join(' | ')} | ${depthIssue}` : depthIssue;
-                          setWarningMsg(completionMessage);
-                          lastWarningTimeRef.current = now;
-                        }
+                        const allErrors = [...bottomErrors];
+                        if (depthIssue) allErrors.push(depthIssue);
+                        setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
+                        lastWarningTimeRef.current = now;
 
                     }
                   }
@@ -437,7 +435,7 @@ export default function EmergencyCamera() {
         <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none gap-3">
           <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-4 py-3 flex items-center justify-center text-white shadow-lg border border-white/10">
             <span className="text-xs text-slate-200 mr-2">深度</span>
-            {forearmLengthCm
+            {shoulderWidthCm
               ? <span className={`text-base font-bold font-mono tracking-wider ${
                   compressionDepth == null ? 'text-slate-400' :
                   compressionDepth < 5.0 ? 'text-yellow-400' :
@@ -446,7 +444,7 @@ export default function EmergencyCamera() {
                 }`}>
                   {compressionDepth != null ? `${compressionDepth.toFixed(1)} cm` : '--'}
                 </span>
-              : <span className="text-xs text-yellow-400 font-bold">未設定臂長</span>
+              : <span className="text-xs text-yellow-400 font-bold">未設定肩寬</span>
             }
           </div>
 
