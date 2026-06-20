@@ -36,11 +36,13 @@ export default function CPRPractice() {
   const highestWristYRef = useRef(1.0);
   const lowestWristYRef = useRef(0.0);
   const lockedShoulderWidthPxRef = useRef(0);
+  const bentFrameCountRef = useRef(0);
   const deepestPostureRef = useRef({ isArmBent: false, isNotVertical: false, isOffset: false });
-  const threshold = 0.025;
+  const threshold = 0.015;
 
   const lastWarningTimeRef = useRef(0);
   const lastPressTimeRef = useRef(0);
+  const depthLogRef = useRef([]);
   const bpmRef = useRef(0);
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 });
 
@@ -145,6 +147,7 @@ export default function CPRPractice() {
     bpmRef.current = 0;
     setCompressionDepth(null);
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 };
+    depthLogRef.current = [];
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120);
@@ -177,7 +180,13 @@ export default function CPRPractice() {
     isTrainingRef.current = false;
     setIsAnalyzing(true); // 開啟分析載入畫面
 
-    const { data: { user } } = await supabase.auth.getUser();
+    let user = null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data?.user ?? null;
+    } catch (authErr) {
+      console.error('getUser 失敗:', authErr);
+    }
     const now = new Date();
     const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
     const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -242,6 +251,18 @@ export default function CPRPractice() {
       accuracy: accuracy,
       fromPractice: true
     };
+
+    if (depthLogRef.current.length > 0) {
+      const header = 'press,wristDeltaPx,shoulderPx,shoulderCm,depthCm\n';
+      const rows = depthLogRef.current.map(r => `${r.press},${r.wristDeltaPx},${r.shoulderPx},${r.shoulderCm},${r.depthCm}`).join('\n');
+      const blob = new Blob([header + rows], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cpr_depth_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
     if (!user) {
       setIsAnalyzing(false);
@@ -383,7 +404,7 @@ export default function CPRPractice() {
                 let errors = [];
                 const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, z: (ls.z + rs.z) / 2 };
                 const midWrist = { x: (lw.x + rw.x) / 2, y: (lw.y + rw.y) / 2, z: (lw.z + rw.z) / 2 };
-                let isArmBent = calculateAngle(ls, landmarks[13], lw, w, h) < 165 || calculateAngle(rs, landmarks[14], rw, w, h) < 165;
+                let isArmBent = calculateAngle(ls, landmarks[13], lw, w, h) < 160 || calculateAngle(rs, landmarks[14], rw, w, h) < 160;
                 let isNotVertical = (midShoulder.z - midWrist.z) > 0.15;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > (shoulderWidth * 0.40);
 
@@ -400,19 +421,24 @@ export default function CPRPractice() {
                 const currentWristY = midWrist.y;
 
                 if (positionStateRef.current === "up") {
-                  if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentShoulderY < highestYRef.current) {
+                    highestYRef.current = currentShoulderY;
+                    if (lockedShoulderWidthPxRef.current === 0) {
+                      lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
+                    }
+                  }
                   if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
-                  lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
                   if (currentShoulderY > highestYRef.current + threshold) {
                     positionStateRef.current = "down";
                     lowestYRef.current = currentShoulderY;
                     lowestWristYRef.current = currentWristY;
                     deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
+                    bentFrameCountRef.current = 0;
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
-                  if (isArmBent) deepestPostureRef.current.isArmBent = true;
+                  if (isArmBent) bentFrameCountRef.current += 1;
                   if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
                   if (isOffset) deepestPostureRef.current.isOffset = true;
                   if (currentShoulderY < lowestYRef.current - threshold) {
@@ -422,50 +448,50 @@ export default function CPRPractice() {
                     highestYRef.current = currentShoulderY;
                     highestWristYRef.current = currentWristY;
 
-                    if (now - lastPressTimeRef.current > 250) {
-                        lastPressTimeRef.current = now;
+                    pressCountRef.current += 1;
 
-                        pressCountRef.current += 1;
+                    const bentAtBottom = bentFrameCountRef.current >= 3;
+                    const { isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
 
-                        const { isArmBent: bentAtBottom, isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
+                    let depthIssue = null;
 
-                        let depthIssue = null;
+                    if (shoulderWidthCmRef.current) {
+                      const shoulderWidthPx = lockedShoulderWidthPxRef.current;
 
-                        if (shoulderWidthCmRef.current) {
-                          const shoulderWidthPx = lockedShoulderWidthPxRef.current;
+                      if (shoulderWidthPx > 0) {
+                        const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
+                        setCompressionDepth(roundedDepth);
+                        depthLogRef.current.push({ press: pressCountRef.current, wristDeltaPx: pressDepthPx.toFixed(1), shoulderPx: shoulderWidthPx.toFixed(1), shoulderCm: shoulderWidthCmRef.current, depthCm: roundedDepth });
 
-                          if (shoulderWidthPx > 0) {
-                            const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
-                            setCompressionDepth(roundedDepth);
+                        if (roundedDepth < 5.0) depthIssue = "按壓過淺";
+                        else if (roundedDepth > 6.0) depthIssue = "按壓過深";
+                      }
+                    } else {
+                      depthLogRef.current.push({ press: pressCountRef.current, wristDeltaPx: pressDepthPx.toFixed(1), shoulderPx: 0, shoulderCm: 0, depthCm: 'N/A' });
+                    }
 
-                            if (roundedDepth < 5.0) depthIssue = "按壓過淺";
-                            else if (roundedDepth > 6.0) depthIssue = "按壓過深";
-                          }
-                        }
+                    if (bentAtBottom) errorsLogRef.current.armBent += 1;
+                    if (notVerticalAtBottom) errorsLogRef.current.notVertical += 1;
+                    if (offsetAtBottom) errorsLogRef.current.positionOffset += 1;
+                    if (depthIssue === "按壓過淺") errorsLogRef.current.depthTooShallow += 1;
+                    if (depthIssue === "按壓過深") errorsLogRef.current.depthTooDeep += 1;
 
-                        if (bentAtBottom) errorsLogRef.current.armBent += 1;
-                        if (notVerticalAtBottom) errorsLogRef.current.notVertical += 1;
-                        if (offsetAtBottom) errorsLogRef.current.positionOffset += 1;
-                        if (depthIssue === "按壓過淺") errorsLogRef.current.depthTooShallow += 1;
-                        if (depthIssue === "按壓過深") errorsLogRef.current.depthTooDeep += 1;
+                    const bottomErrors = [
+                      bentAtBottom && "手肘未打直",
+                      notVerticalAtBottom && "身體前傾不足",
+                      offsetAtBottom && "按壓位置偏移",
+                    ].filter(Boolean);
 
-                        const bottomErrors = [
-                          bentAtBottom && "手肘未打直",
-                          notVerticalAtBottom && "身體前傾不足",
-                          offsetAtBottom && "按壓位置偏移",
-                        ].filter(Boolean);
+                    const allErrors = [...bottomErrors];
+                    if (depthIssue) allErrors.push(depthIssue);
+                    setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
+                    lastWarningTimeRef.current = now;
 
-                        const allErrors = [...bottomErrors];
-                        if (depthIssue) allErrors.push(depthIssue);
-                        setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
-                        lastWarningTimeRef.current = now;
-
-                        const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-                        if (elapsedTime > 3) {
-                           const newBpm = Math.floor((pressCountRef.current / elapsedTime) * 60);
-                           bpmRef.current = newBpm;
-                           setBpm(newBpm);
-                        }
+                    const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
+                    if (elapsedTime > 3) {
+                      const newBpm = Math.floor((pressCountRef.current / elapsedTime) * 60);
+                      bpmRef.current = newBpm;
+                      setBpm(newBpm);
                     }
                   }
                 }

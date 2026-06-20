@@ -29,8 +29,9 @@ export default function EmergencyCamera() {
   const highestWristYRef = useRef(1.0);
   const lowestWristYRef = useRef(0.0);
   const lockedShoulderWidthPxRef = useRef(0);
-  const deepestPostureRef = useRef({ isArmBent: false, isNotVertical: false, isOffset: false });
-  const threshold = 0.025;
+  const deepestPostureRef = useRef({ isNotVertical: false, isOffset: false });
+  const bentFrameCountRef = useRef(0);
+  const threshold = 0.015;
 
   const lastWarningTimeRef = useRef(0); 
   const lastPressTimeRef = useRef(0);
@@ -114,8 +115,9 @@ export default function EmergencyCamera() {
     lowestYRef.current = 0.0;
     highestWristYRef.current = 1.0;
     lowestWristYRef.current = 0.0;
-    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
-    
+    deepestPostureRef.current = { isNotVertical: false, isOffset: false };
+    bentFrameCountRef.current = 0;
+
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
     const ctx = audioCtxRef.current;
@@ -238,7 +240,7 @@ export default function EmergencyCamera() {
                 let errors = [];
                 const midShoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, z: (ls.z + rs.z) / 2 };
                 const midWrist = { x: (lw.x + rw.x) / 2, y: (lw.y + rw.y) / 2, z: (lw.z + rw.z) / 2 };
-                let isArmBent = calculateAngle(ls, landmarks[13], lw, w, h) < 165 || calculateAngle(rs, landmarks[14], rw, w, h) < 165;
+                let isArmBent = calculateAngle(ls, landmarks[13], lw, w, h) < 160 || calculateAngle(rs, landmarks[14], rw, w, h) < 160;
                 let isNotVertical = (midShoulder.z - midWrist.z) > 0.15;
                 let isOffset = Math.abs(midWrist.x - midShoulder.x) > (shoulderWidth * 0.40);
                 
@@ -256,19 +258,24 @@ export default function EmergencyCamera() {
                 const currentWristY = midWrist.y;
 
                 if (positionStateRef.current === "up") {
-                  if (currentShoulderY < highestYRef.current) highestYRef.current = currentShoulderY;
+                  if (currentShoulderY < highestYRef.current) {
+                    highestYRef.current = currentShoulderY;
+                    if (lockedShoulderWidthPxRef.current === 0) {
+                      lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
+                    }
+                  }
                   if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
-                  lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
                   if (currentShoulderY > highestYRef.current + threshold) {
                     positionStateRef.current = "down";
                     lowestYRef.current = currentShoulderY;
                     lowestWristYRef.current = currentWristY;
-                    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
+                    deepestPostureRef.current = { isNotVertical: false, isOffset: false };
+                    bentFrameCountRef.current = 0;
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
-                  if (isArmBent) deepestPostureRef.current.isArmBent = true;
+                  if (isArmBent) bentFrameCountRef.current += 1;
                   if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
                   if (isOffset) deepestPostureRef.current.isOffset = true;
                   if (currentShoulderY < lowestYRef.current - threshold) {
@@ -277,34 +284,30 @@ export default function EmergencyCamera() {
                     highestYRef.current = currentShoulderY;
                     highestWristYRef.current = currentWristY;
 
-                    if (now - lastPressTimeRef.current > 250) {
-                        lastPressTimeRef.current = now;
+                    const bentAtBottom = bentFrameCountRef.current >= 3;
+                    const { isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
 
-                        const { isArmBent: bentAtBottom, isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
-
-                        let depthIssue = null;
-                        if (shoulderWidthCmRef.current) {
-                          const shoulderWidthPx = lockedShoulderWidthPxRef.current;
-                          if (shoulderWidthPx > 0) {
-                            const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
-                            setCompressionDepth(roundedDepth);
-                            if (roundedDepth < 5.0) depthIssue = "按壓過淺";
-                            else if (roundedDepth > 6.0) depthIssue = "按壓過深";
-                          }
-                        }
-
-                        const bottomErrors = [
-                          bentAtBottom && "手肘未打直",
-                          notVerticalAtBottom && "身體前傾不足",
-                          offsetAtBottom && "按壓位置偏移",
-                        ].filter(Boolean);
-
-                        const allErrors = [...bottomErrors];
-                        if (depthIssue) allErrors.push(depthIssue);
-                        setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
-                        lastWarningTimeRef.current = now;
-
+                    let depthIssue = null;
+                    if (shoulderWidthCmRef.current) {
+                      const shoulderWidthPx = lockedShoulderWidthPxRef.current;
+                      if (shoulderWidthPx > 0) {
+                        const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
+                        setCompressionDepth(roundedDepth);
+                        if (roundedDepth < 5.0) depthIssue = "按壓過淺";
+                        else if (roundedDepth > 6.0) depthIssue = "按壓過深";
+                      }
                     }
+
+                    const bottomErrors = [
+                      bentAtBottom && "手肘未打直",
+                      notVerticalAtBottom && "身體前傾不足",
+                      offsetAtBottom && "按壓位置偏移",
+                    ].filter(Boolean);
+
+                    const allErrors = [...bottomErrors];
+                    if (depthIssue) allErrors.push(depthIssue);
+                    setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
+                    lastWarningTimeRef.current = now;
                   }
                 }
               }
