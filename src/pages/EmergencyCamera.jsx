@@ -14,7 +14,6 @@ export default function EmergencyCamera() {
   const requestRef = useRef(null);
 
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
-  const [compressionDepth, setCompressionDepth] = useState(null);
 
   const [isTraining, setIsTraining] = useState(false);
   const [facingMode, setFacingMode] = useState("environment");
@@ -108,7 +107,6 @@ export default function EmergencyCamera() {
     }
     setIsTraining(true);
     isTrainingRef.current = true;
-    setCompressionDepth(null);
     setWarningMsg("請開始按壓");
     positionStateRef.current = "up";
     highestYRef.current = 1.0;
@@ -292,7 +290,6 @@ export default function EmergencyCamera() {
                       const shoulderWidthPx = lockedShoulderWidthPxRef.current;
                       if (shoulderWidthPx > 0) {
                         const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
-                        setCompressionDepth(roundedDepth);
                         if (roundedDepth < 5.0) depthIssue = "按壓過淺";
                         else if (roundedDepth > 6.0) depthIssue = "按壓過深";
                       }
@@ -435,39 +432,22 @@ export default function EmergencyCamera() {
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none gap-3">
-          <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-4 py-3 flex items-center justify-center text-white shadow-lg border border-white/10">
-            <span className="text-xs text-slate-200 mr-2">深度</span>
-            {shoulderWidthCm
-              ? <span className={`text-base font-bold font-mono tracking-wider ${
-                  compressionDepth == null ? 'text-slate-400' :
-                  compressionDepth < 5.0 ? 'text-yellow-400' :
-                  compressionDepth > 6.0 ? 'text-red-400' :
-                  'text-green-400'
-                }`}>
-                  {compressionDepth != null ? `${compressionDepth.toFixed(1)} cm` : '--'}
-                </span>
-              : <span className="text-xs text-yellow-400 font-bold">未設定肩寬</span>
-            }
-          </div>
-
-          <div className="pointer-events-auto">
-            {!isTraining ? (
-              <button onClick={handleStartEmergency} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center justify-center gap-2 w-36">
-                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <polygon points="6,4 16,10 6,16" />
-                </svg>
-                開始偵測
-              </button>
-            ) : (
-              <button onClick={handleStopEmergency} className="bg-rose-500/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-rose-400/30 flex items-center justify-center gap-2 w-36">
-                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <rect x="5" y="5" width="10" height="10" />
-                </svg>
-                暫停按壓
-              </button>
-            )}
-          </div>
+        <div className="absolute bottom-8 right-6 z-20">
+          {!isTraining ? (
+            <button onClick={handleStartEmergency} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center justify-center gap-2 w-36">
+              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <polygon points="6,4 16,10 6,16" />
+              </svg>
+              開始偵測
+            </button>
+          ) : (
+            <button onClick={handleStopEmergency} className="bg-rose-500/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-rose-400/30 flex items-center justify-center gap-2 w-36">
+              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <rect x="5" y="5" width="10" height="10" />
+              </svg>
+              暫停按壓
+            </button>
+          )}
         </div>
 
       </div>

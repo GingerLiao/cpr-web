@@ -15,7 +15,6 @@ export default function CPRPractice() {
 
   const [bpm, setBpm] = useState(0);
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
-  const [compressionDepth, setCompressionDepth] = useState(null);
 
   const [isTraining, setIsTraining] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
@@ -42,7 +41,6 @@ export default function CPRPractice() {
 
   const lastWarningTimeRef = useRef(0);
   const lastPressTimeRef = useRef(0);
-  const depthLogRef = useRef([]);
   const bpmRef = useRef(0);
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 });
 
@@ -145,9 +143,7 @@ export default function CPRPractice() {
     isTrainingRef.current = true;
     pressCountRef.current = 0;
     bpmRef.current = 0;
-    setCompressionDepth(null);
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 };
-    depthLogRef.current = [];
     startTimeRef.current = Date.now();
     setBpm(0);
     setTimeLeft(120);
@@ -200,14 +196,15 @@ export default function CPRPractice() {
       else if (finalBpm > 120) bpmScore = Math.max(0, 100 - (finalBpm - 120) * 2);
 
       const depthErrors = errorsLogRef.current.depthTooShallow + errorsLogRef.current.depthTooDeep;
+      const depthScore = Math.max(0, 100 - (depthErrors / totalPresses) * 100);
+      const postureScore = Math.max(0, 100 - ((errorsLogRef.current.armBent + errorsLogRef.current.notVertical) / totalPresses) * 100);
       const positionScore = Math.max(0, 100 - (errorsLogRef.current.positionOffset / totalPresses) * 100);
-      const postureErrors = errorsLogRef.current.armBent + errorsLogRef.current.notVertical + depthErrors;
-      const postureScore = Math.max(0, 100 - (postureErrors / totalPresses) * 100);
 
       accuracy = Math.round(
-        (bpmScore * 0.35) + 
-        (positionScore * 0.35) + 
-        (postureScore * 0.30)
+        (bpmScore    * 0.40) +
+        (depthScore  * 0.40) +
+        (postureScore * 0.15) +
+        (positionScore * 0.05)
       );
     }
 
@@ -251,18 +248,6 @@ export default function CPRPractice() {
       accuracy: accuracy,
       fromPractice: true
     };
-
-    if (depthLogRef.current.length > 0) {
-      const header = 'press,wristDeltaPx,shoulderPx,shoulderCm,depthCm\n';
-      const rows = depthLogRef.current.map(r => `${r.press},${r.wristDeltaPx},${r.shoulderPx},${r.shoulderCm},${r.depthCm}`).join('\n');
-      const blob = new Blob([header + rows], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cpr_depth_${Date.now()}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
 
     if (!user) {
       setIsAnalyzing(false);
@@ -460,14 +445,9 @@ export default function CPRPractice() {
 
                       if (shoulderWidthPx > 0) {
                         const roundedDepth = Math.round((pressDepthPx / (shoulderWidthPx / shoulderWidthCmRef.current)) * 10) / 10;
-                        setCompressionDepth(roundedDepth);
-                        depthLogRef.current.push({ press: pressCountRef.current, wristDeltaPx: pressDepthPx.toFixed(1), shoulderPx: shoulderWidthPx.toFixed(1), shoulderCm: shoulderWidthCmRef.current, depthCm: roundedDepth });
-
                         if (roundedDepth < 5.0) depthIssue = "按壓過淺";
                         else if (roundedDepth > 6.0) depthIssue = "按壓過深";
                       }
-                    } else {
-                      depthLogRef.current.push({ press: pressCountRef.current, wristDeltaPx: pressDepthPx.toFixed(1), shoulderPx: 0, shoulderCm: 0, depthCm: 'N/A' });
                     }
 
                     if (bentAtBottom) errorsLogRef.current.armBent += 1;
@@ -620,21 +600,6 @@ export default function CPRPractice() {
         </div>
 
         <div className="absolute bottom-8 left-0 w-full px-6 flex justify-between items-center z-20 pointer-events-none gap-3">
-          <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-4 py-3 flex items-center justify-center text-white shadow-lg border border-white/10">
-            <span className="text-xs text-slate-200 mr-2">深度</span>
-            {shoulderWidthCm
-              ? <span className={`text-base font-bold font-mono tracking-wider ${
-                  compressionDepth == null ? 'text-slate-400' :
-                  compressionDepth < 5.0 ? 'text-yellow-400' :
-                  compressionDepth > 6.0 ? 'text-red-400' :
-                  'text-green-400'
-                }`}>
-                  {compressionDepth != null ? `${compressionDepth.toFixed(1)} cm` : '--'}
-                </span>
-              : <span className="text-xs text-yellow-400 font-bold">未設定肩寬</span>
-            }
-          </div>
-
           <div className="pointer-events-auto bg-black/40 backdrop-blur-md rounded-full px-5 py-3 flex items-center justify-center text-white shadow-lg border border-white/10 w-36">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse mr-2.5"></span>
             <span className="text-base font-bold text-rose-400 font-mono tracking-wider">{formatTime(timeLeft)}</span>

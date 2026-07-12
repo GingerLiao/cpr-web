@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation} from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
@@ -7,8 +7,11 @@ export default function HistoryRecord() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'quiz');
   const [selectedQuiz, setSelectedQuiz] = useState(null);
+  const [chartTab, setChartTab] = useState(0);
+  const touchStartX = useRef(null);
   const [cprHistory, setCprHistory] = useState([]);
   const [quizHistory, setQuizHistory] = useState([]);
+  const [totalBankCount, setTotalBankCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isQuizLoading, setIsQuizLoading] = useState(true);
 
@@ -57,9 +60,14 @@ export default function HistoryRecord() {
           setQuizHistory(quizData.map(item => ({
             id: item.id, date: item.date, time: item.time,
             score: item.score, correct: item.correct, total: item.total,
-            details: item.details 
+            details: item.details
           })));
         }
+
+        const { count: bankCount } = await supabase
+          .from('QuestionBank')
+          .select('*', { count: 'exact', head: true });
+        setTotalBankCount(bankCount || 0);
       } catch (error) {
         console.error("獲取歷史紀錄失敗:", error);
       } finally {
@@ -69,6 +77,16 @@ export default function HistoryRecord() {
     };
     fetchRecords();
   }, [isGuest]);
+
+  // 題目掌握度計算
+  const masteredSet = new Set();
+  quizHistory.forEach(record => {
+    (record.details || []).forEach(item => {
+      if (item.userAns === item.correctAns) masteredSet.add(item.question);
+    });
+  });
+  const masteredCount = masteredSet.size;
+  const masteryRate = totalBankCount > 0 ? Math.round((masteredCount / totalBankCount) * 100) : 0;
 
   // ==========================================
   // 🌟 核心修改：以「天」為單位分組，並抓取最近 7 次 (有練習的日子)
@@ -96,15 +114,62 @@ export default function HistoryRecord() {
   // 4. 只抓取「最近 7 次」有練習的日期
   const chartData = dailyDataArray.slice(-7);
   
-  // 5. 計算圖表 X 軸繪製的間距與點位
-  const xStep = chartData.length > 1 ? 100 / (chartData.length - 1) : 100;
-  const pointsString = chartData.map((d, i) => `${i * xStep},${100 - d.accuracy}`).join(' ');
-  
-  // 確保漸層底部區域能平整地填滿
-  let polyPoints = '';
-  if (chartData.length > 0) {
-    polyPoints = `0,100 ${pointsString} ${(chartData.length - 1) * xStep},100`;
-  }
+  // 5. 圖表座標計算
+  const PAD = { l: 28, r: 12, t: 22, b: 26 };
+  const SVG_W = 300, SVG_H = 160;
+  const cw = SVG_W - PAD.l - PAD.r;
+  const ch = SVG_H - PAD.t - PAD.b;
+  const cx = (i) => PAD.l + (chartData.length > 1 ? (i / (chartData.length - 1)) * cw : cw / 2);
+  const cy = (acc) => PAD.t + ch * (1 - acc / 100);
+
+  // 平滑曲線路徑
+  const smoothPath = (pts) => {
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return `M ${pts[0][0]} ${pts[0][1]}`;
+    let d = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 1; i < pts.length; i++) {
+      const cpx = (pts[i-1][0] + pts[i][0]) / 2;
+      d += ` C ${cpx} ${pts[i-1][1]}, ${cpx} ${pts[i][1]}, ${pts[i][0]} ${pts[i][1]}`;
+    }
+    return d;
+  };
+  const chartPts = chartData.map((d, i) => [cx(i), cy(d.accuracy)]);
+  const linePath = smoothPath(chartPts);
+  const areaPath = chartPts.length > 0
+    ? `${linePath} L ${chartPts[chartPts.length-1][0]} ${PAD.t + ch} L ${chartPts[0][0]} ${PAD.t + ch} Z`
+    : '';
+
+  // 今日紀錄圖表
+  const todayStr = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getDate().toString().padStart(2,'0')}`;
+  })();
+  const todayRecords = [...cprHistory].filter(r => r.date === todayStr).reverse().slice(-7);
+  const todayCx = (i) => PAD.l + (todayRecords.length > 1 ? (i / (todayRecords.length - 1)) * cw : cw / 2);
+  const todayPts = todayRecords.map((d, i) => [todayCx(i), cy(d.accuracy)]);
+  const todayLinePath = smoothPath(todayPts);
+  const todayAreaPath = todayPts.length > 0
+    ? `${todayLinePath} L ${todayPts[todayPts.length-1][0]} ${PAD.t + ch} L ${todayPts[0][0]} ${PAD.t + ch} Z`
+    : '';
+
+  const to24h = (timeStr) => {
+    const [period, time] = timeStr.split(' ');
+    if (!time) return timeStr;
+    const [h, m] = time.split(':');
+    let hour = parseInt(h);
+    if (period === '上午' && hour === 12) hour = 0;
+    if (period === '下午' && hour !== 12) hour += 12;
+    return `${hour.toString().padStart(2, '0')}:${m}`;
+  };
+
+  const handleChartTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+  const handleChartTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const diff = touchStartX.current - e.changedTouches[0].clientX;
+    if (diff > 50 && chartTab === 0) setChartTab(1);
+    if (diff < -50 && chartTab === 1) setChartTab(0);
+    touchStartX.current = null;
+  };
   // ==========================================
 
   if (selectedQuiz) {
@@ -214,14 +279,24 @@ export default function HistoryRecord() {
             <main className="flex-1 overflow-y-auto p-6 pb-24">
               {activeTab === 'quiz' && (
                 <div className="animate-fade-in">
-                  {quizHistory.length > 0 && (
-                    <div className="cpr-card border-[#D4A373]/20 !p-5 mb-6 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-slate-500 font-bold text-xs mb-1">最近一次測驗</h2>
-                        <div className="text-sm font-bold text-slate-800">答對題數 : {quizHistory[0].correct} / {quizHistory[0].total}</div>
+                  {totalBankCount > 0 && (
+                    <div className="cpr-card border-[#D4A373]/20 !p-5 mb-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h2 className="text-slate-500 font-bold text-xs mb-1">題庫掌握度</h2>
+                          <div className="text-sm font-bold text-slate-800">
+                            已答對 <span className="text-[#D4A373]">{masteredCount}</span> / {totalBankCount} 題
+                          </div>
+                        </div>
+                        <div className="w-14 h-14 rounded-full border-4 border-amber-200 bg-amber-50 flex items-center justify-center">
+                          <span className="font-black text-[#D4A373] text-lg">{masteryRate}%</span>
+                        </div>
                       </div>
-                      <div className="w-14 h-14 rounded-full border-4 border-amber-200 bg-amber-50 flex items-center justify-center">
-                        <span className="font-black text-[#D4A373] text-lg">{quizHistory[0].score}%</span>
+                      <div className="w-full bg-amber-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#D4A373] rounded-full transition-all duration-500"
+                          style={{ width: `${masteryRate}%` }}
+                        />
                       </div>
                     </div>
                   )}
@@ -251,43 +326,114 @@ export default function HistoryRecord() {
               {activeTab === 'cpr' && (
                 <div className="animate-fade-in">
                   <div className="cpr-card border-[#E09E75]/20 !p-5 mb-6">
-                    <h4 className="text-slate-700 font-bold mb-4 text-sm">練習趨勢圖 (每日平均)</h4>
-                    {isLoading ? (
-                      <div className="w-full h-32 flex flex-col items-center justify-center text-slate-400">
-                        <div className="w-8 h-8 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin mb-2"></div>
+                    {/* 標題列 + 頁籤 */}
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-slate-700 font-bold text-sm">
+                        {chartTab === 0 ? '每日平均趨勢' : '今日練習紀錄'}
+                      </h4>
+                      <div className="flex gap-1.5">
+                        {['趨勢', '今日'].map((label, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setChartTab(idx)}
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${chartTab === idx ? 'bg-[#E09E75] text-white' : 'bg-slate-100 text-slate-400'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
                       </div>
-                    ) : chartData.length > 0 ? (
-                      <>
-                        <div className="w-full relative h-32 mt-4">
-                          <svg viewBox="0 -10 100 120" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                            <defs>
-                              <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#E09E75" stopOpacity="0.3"/>
-                                <stop offset="100%" stopColor="#E09E75" stopOpacity="0.0"/>
-                              </linearGradient>
-                            </defs>
-                            <polygon points={polyPoints} fill="url(#chartGradient)" />
-                            <polyline points={pointsString} fill="none" stroke="#E09E75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                            {chartData.map((d, i) => (
-                              <g key={d.date} className="group cursor-pointer">
-                                <circle cx={i * xStep} cy={100 - d.accuracy} r="3" fill="#fff" stroke="#E09E75" strokeWidth="2" />
-                                <text x={i * xStep} y={100 - d.accuracy - 10} fontSize="6" fill="#64748b" textAnchor="middle" className="font-bold opacity-0 group-hover:opacity-100 transition-opacity">{d.accuracy}%</text>
-                              </g>
-                            ))}
-                          </svg>
+                    </div>
+
+                    {/* 滑動容器 */}
+                    <div
+                      className="overflow-hidden"
+                      onTouchStart={handleChartTouchStart}
+                      onTouchEnd={handleChartTouchEnd}
+                    >
+                      <div
+                        className="flex transition-transform duration-300"
+                        style={{ transform: `translateX(-${chartTab * 100}%)` }}
+                      >
+                        {/* 圖一：每日平均趨勢 */}
+                        <div className="shrink-0 w-full">
+                          {isLoading ? (
+                            <div className="w-full h-40 flex items-center justify-center">
+                              <div className="w-8 h-8 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          ) : chartData.length > 0 ? (
+                            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+                              <defs>
+                                <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#E09E75" stopOpacity="0.25"/>
+                                  <stop offset="100%" stopColor="#E09E75" stopOpacity="0"/>
+                                </linearGradient>
+                              </defs>
+                              {[0, 25, 50, 75, 100].map(v => (
+                                <g key={v}>
+                                  <line x1={PAD.l} y1={cy(v)} x2={PAD.l + cw} y2={cy(v)} stroke="#e2e8f0" strokeWidth="0.8" />
+                                  <text x={PAD.l - 4} y={cy(v) + 3.5} fontSize="8" fill="#94a3b8" textAnchor="end">{v}</text>
+                                </g>
+                              ))}
+                              <path d={areaPath} fill="url(#chartGradient)" />
+                              <path d={linePath} fill="none" stroke="#E09E75" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              {chartData.map((d, i) => (
+                                <g key={d.date}>
+                                  <circle cx={cx(i)} cy={cy(d.accuracy)} r="3.5" fill="#fff" stroke="#E09E75" strokeWidth="2" />
+                                  <text x={cx(i)} y={cy(d.accuracy) - 7} fontSize="8" fill="#E09E75" textAnchor="middle" fontWeight="bold">{d.accuracy}%</text>
+                                  <text x={cx(i)} y={SVG_H - 6} fontSize="8" fill="#94a3b8" textAnchor="middle">{d.date.slice(5)}</text>
+                                </g>
+                              ))}
+                            </svg>
+                          ) : (
+                            <div className="w-full h-40 flex items-center justify-center text-slate-400 font-medium text-sm">尚無練習數據</div>
+                          )}
                         </div>
-                        {/* X 軸標籤：顯示開始時間、中間點、最近一次練習 */}
-                        <div className="flex justify-between mt-2 px-1">
-                          <span className="text-[10px] text-slate-400 font-medium">{chartData[0]?.date.slice(5)}</span>
-                          {chartData.length > 2 && <span className="text-[10px] text-slate-400 font-medium">{chartData[Math.floor(chartData.length/2)]?.date.slice(5)}</span>}
-                          {chartData.length > 1 && <span className="text-[10px] text-slate-400 font-medium">{chartData[chartData.length - 1]?.date.slice(5)}</span>}
+
+                        {/* 圖二：今日每筆紀錄 */}
+                        <div className="shrink-0 w-full">
+                          {isLoading ? (
+                            <div className="w-full h-40 flex items-center justify-center">
+                              <div className="w-8 h-8 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          ) : todayRecords.length > 0 ? (
+                            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+                              <defs>
+                                <linearGradient id="todayGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#6B908F" stopOpacity="0.25"/>
+                                  <stop offset="100%" stopColor="#6B908F" stopOpacity="0"/>
+                                </linearGradient>
+                              </defs>
+                              {[0, 25, 50, 75, 100].map(v => (
+                                <g key={v}>
+                                  <line x1={PAD.l} y1={cy(v)} x2={PAD.l + cw} y2={cy(v)} stroke="#e2e8f0" strokeWidth="0.8" />
+                                  <text x={PAD.l - 4} y={cy(v) + 3.5} fontSize="8" fill="#94a3b8" textAnchor="end">{v}</text>
+                                </g>
+                              ))}
+                              <path d={todayAreaPath} fill="url(#todayGradient)" />
+                              <path d={todayLinePath} fill="none" stroke="#6B908F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              {todayRecords.map((d, i) => (
+                                <g key={i}>
+                                  <circle cx={todayCx(i)} cy={cy(d.accuracy)} r="3.5" fill="#fff" stroke="#6B908F" strokeWidth="2" />
+                                  <text x={todayCx(i)} y={cy(d.accuracy) - 7} fontSize="8" fill="#6B908F" textAnchor="middle" fontWeight="bold">{d.accuracy}%</text>
+                                  <text x={todayCx(i)} y={SVG_H - 6} fontSize="8" fill="#94a3b8" textAnchor="middle">{to24h(d.time)}</text>
+                                </g>
+                              ))}
+                            </svg>
+                          ) : (
+                            <div className="w-full h-40 flex items-center justify-center text-slate-400 font-medium text-sm">今日尚無練習紀錄</div>
+                          )}
                         </div>
-                      </>
-                    ) : (
-                      <div className="w-full h-32 flex items-center justify-center text-slate-400 font-medium text-sm">
-                        尚無練習數據
                       </div>
-                    )}
+                    </div>
+
+                    {/* 分頁指示點 */}
+                    <div className="flex justify-center gap-2 mt-3">
+                      {[0, 1].map(idx => (
+                        <button key={idx} onClick={() => setChartTab(idx)}
+                          className={`rounded-full transition-all ${chartTab === idx ? 'w-4 h-2 bg-[#E09E75]' : 'w-2 h-2 bg-slate-300'}`}
+                        />
+                      ))}
+                    </div>
                   </div>
 
                   <h3 className="font-bold text-slate-600 mb-3 ml-1 text-sm">實作紀錄清單</h3>

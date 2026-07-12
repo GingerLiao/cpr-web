@@ -77,7 +77,7 @@ export default function CPRQuiz() {
       const { data: { user } } = await supabase.auth.getUser();
       const now = new Date();
       const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
-      const timeStr = `${now.getHours() > 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
       const recordData = {
         user_id: user?.id,
         date: dateStr,

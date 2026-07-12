@@ -82,11 +82,14 @@ export default function CPRReport() {
     fetchAiAdvice();
   }, [reportData]);
 
+  const totalPresses = reportData?.totalPresses || reportData?.count || 1;
+
   const getSeverity = (count) => {
-    if (count === 0) return { label: '完美', textColor: 'text-green-500', barColor: 'bg-green-500', bgColor: 'bg-green-100' };
-    if (count <= 5) return { label: '警告', textColor: 'text-blue-500', barColor: 'bg-blue-500', bgColor: 'bg-blue-100' };
-    if (count <= 15) return { label: '注意', textColor: 'text-yellow-600', barColor: 'bg-yellow-400', bgColor: 'bg-yellow-100' };
-    return { label: '危險', textColor: 'text-red-600', barColor: 'bg-red-500', bgColor: 'bg-red-100' };
+    const ratio = totalPresses > 0 ? count / totalPresses : 0;
+    if (count === 0)   return { label: '完美', textColor: 'text-green-500', barColor: 'bg-green-500', bgColor: 'bg-green-100', ratio };
+    if (ratio <= 0.10) return { label: '警告', textColor: 'text-blue-500',  barColor: 'bg-blue-500',  bgColor: 'bg-blue-100',  ratio };
+    if (ratio <= 0.25) return { label: '注意', textColor: 'text-yellow-600', barColor: 'bg-yellow-400', bgColor: 'bg-yellow-100', ratio };
+    return               { label: '危險', textColor: 'text-red-600',   barColor: 'bg-red-500',   bgColor: 'bg-red-100',   ratio };
   };
 
   if (!location.state) {
@@ -142,11 +145,11 @@ export default function CPRReport() {
                   <div key={index}>
                     <div className="flex justify-between items-end mb-1">
                       <span className="font-bold text-slate-700 text-base">{item.label}</span>
-                      <span className="text-xs text-slate-500 font-bold">出現 {item.count} 次</span>
+                      <span className="text-xs text-slate-500 font-bold">{item.count} 次</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className={`w-full ${severity.bgColor} h-3 rounded-full overflow-hidden flex`}>
-                        <div className={`${severity.barColor} h-full rounded-full`} style={{ width: `${Math.min(item.count * 10, 100)}%` }}></div>
+                        <div className={`${severity.barColor} h-full rounded-full`} style={{ width: `${Math.round(severity.ratio * 100)}%` }}></div>
                       </div>
                       <span className={`text-xs font-bold ${severity.textColor} w-10 text-right`}>{severity.label}</span>
                     </div>
