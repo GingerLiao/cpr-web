@@ -21,6 +21,7 @@ export default function CPRPractice() {
   const [facingMode, setFacingMode] = useState("environment");
   const [shoulderWidthCm, setShoulderWidthCm] = useState(null);
   const shoulderWidthCmRef = useRef(null);
+  const [showShoulderWarning, setShowShoulderWarning] = useState(false);
   
   // ✅ 新增：用來顯示分析中的過場動畫
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -83,9 +84,17 @@ export default function CPRPractice() {
           const val = Number(data.user.user_metadata.shoulder_width_cm);
           setShoulderWidthCm(val);
           shoulderWidthCmRef.current = val;
+          return;
         }
       } catch (err) {
         console.error('載入肩膀寬度失敗:', err);
+      }
+      const guest = Number(localStorage.getItem('guest_shoulder_width_cm'));
+      if (guest > 0) {
+        setShoulderWidthCm(guest);
+        shoulderWidthCmRef.current = guest;
+      } else {
+        setShowShoulderWarning(true);
       }
     }
     loadShoulderWidth();
@@ -294,7 +303,7 @@ export default function CPRPractice() {
     const initializeMediaPipe = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
         );
         poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -590,6 +599,18 @@ export default function CPRPractice() {
             </svg>
           </button>
         </div>
+
+        {showShoulderWarning && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 w-[90%] max-w-sm bg-amber-500/95 backdrop-blur-md rounded-2xl px-4 py-3 shadow-xl flex items-center justify-between gap-3">
+            <span className="text-white text-xs font-bold leading-snug">尚未設定肩寬，深度偵測無法使用</span>
+            <button
+              onClick={() => navigate('/')}
+              className="shrink-0 bg-white text-amber-600 text-xs font-black px-3 py-1.5 rounded-full"
+            >
+              前往設定
+            </button>
+          </div>
+        )}
 
         <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[90%] max-w-sm flex flex-col gap-3 items-center">
           <div className={`px-8 py-2 rounded-full flex items-center justify-center gap-3 text-xl font-black shadow-lg text-white backdrop-blur-md transition-colors 

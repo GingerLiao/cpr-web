@@ -75,23 +75,24 @@ export default function CPRQuiz() {
       const correctCount = userRecord.filter(r => r.userAns === r.correctAns).length;
       const finalScore = Math.round((correctCount / quizQuestions.length) * 100);
       const { data: { user } } = await supabase.auth.getUser();
-      const now = new Date();
-      const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
-      const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
-      const recordData = {
-        user_id: user?.id,
-        date: dateStr,
-        time: timeStr,
-        score: finalScore,
-        correct: correctCount,
-        total: quizQuestions.length,
-        details: userRecord 
-      };
-      try {
-        await supabase.from('QuizRecord').insert([recordData]);
-        console.log('成績已儲存');
-      } catch (error) {
-        console.error('儲存成績失敗:', error);
+      if (user) {
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
+        const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
+        const recordData = {
+          user_id: user.id,
+          date: dateStr,
+          time: timeStr,
+          score: finalScore,
+          correct: correctCount,
+          total: quizQuestions.length,
+          details: userRecord
+        };
+        try {
+          await supabase.from('QuizRecord').insert([recordData]);
+        } catch (error) {
+          console.error('儲存成績失敗:', error);
+        }
       }
       setIsFinished(true);
     }

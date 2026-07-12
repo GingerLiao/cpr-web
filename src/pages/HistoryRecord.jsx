@@ -27,9 +27,13 @@ export default function HistoryRecord() {
 
     const fetchRecords = async () => {
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
         const { data: cprData, error: cprError } = await supabase
           .from('CprRecord')
           .select('*')
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
         
         if (!cprError && cprData) {
@@ -54,6 +58,7 @@ export default function HistoryRecord() {
         const { data: quizData, error: quizError } = await supabase
           .from('QuizRecord')
           .select('*')
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
           
         if (!quizError && quizData) {

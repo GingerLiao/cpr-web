@@ -25,9 +25,13 @@ const systemPrompt = "你是一個專業的醫療急救輔助系統。請根據�
     const userPrompt = `
       實作數據如下：
       - 準確率：${results.accuracy}%
+      - 按壓總次數：${results.totalPresses ?? results.count ?? 'N/A'}
+      - 平均頻率：${results.finalBpm ?? results.bpm ?? 'N/A'} BPM
       - 手肘彎曲：${results.errors.armBent} 次
       - 身體前傾不足：${results.errors.notVertical} 次
       - 按壓位置偏移：${results.errors.positionOffset} 次
+      - 按壓過淺（< 5 cm）：${results.errors.depthTooShallow} 次
+      - 按壓過深（> 6 cm）：${results.errors.depthTooDeep} 次
       請針對上述失誤數據，輸出專業修正建議。
     `;
 
