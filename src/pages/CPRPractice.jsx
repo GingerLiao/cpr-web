@@ -3,12 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from '@mediapipe/tasks-vision';
 import { supabase } from '../supabaseClient';
 import { calculateAngle, calculateCenterVerticalAngle, TARGET_BPM } from '../utils/helpers';
+import { VoiceCoach } from '../utils/voiceCoach';   // 新增
 
 export default function CPRPractice() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const audioCtxRef = useRef(null); 
+
+  const metronomeGainRef = useRef(null);   // 新增：節拍器總音量節點
+  const voiceRef = useRef(null);           // 新增：語音教練
 
   const poseLandmarkerRef = useRef(null);
   const requestRef = useRef(null);
@@ -23,8 +27,10 @@ export default function CPRPractice() {
   const shoulderWidthCmRef = useRef(null);
   const [showShoulderWarning, setShowShoulderWarning] = useState(false);
   
-  // ✅ 新增：用來顯示分析中的過場動畫
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const [voiceOn, setVoiceOn] = useState(true);
+  const voiceOnRef = useRef(true);   // 給非 React 邏輯讀取用
 
   const facingModeRef = useRef("environment"); 
   const isTrainingRef = useRef(false);
@@ -68,8 +74,34 @@ export default function CPRPractice() {
     }
   };
 
+  const toggleVoice = () => {
+    const next = !voiceOnRef.current;
+    voiceOnRef.current = next;
+    setVoiceOn(next);
+    voiceRef.current?.setEnabled(next);   // 關掉時會立刻停止並還原音量
+  };
+
+  // 新增：語音播報時壓低節拍器、講完還原
+  const duckMetronome = () => {
+    const ctx = audioCtxRef.current;
+    const gain = metronomeGainRef.current;
+    if (!ctx || !gain) return;
+    const t = ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(0.12, t, 0.04);   // 平滑壓到 12%
+  };
+  const unduckMetronome = () => {
+    const ctx = audioCtxRef.current;
+    const gain = metronomeGainRef.current;
+    if (!ctx || !gain) return;
+    const t = ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(1.0, t, 0.08);     // 平滑拉回
+  };
+
   useEffect(() => {
     return () => {
+      voiceRef.current?.stop();   // 新增
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(err => console.log(err));
       }
@@ -115,7 +147,7 @@ export default function CPRPractice() {
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtxRef.current.currentTime + 0.1);
           
           osc.connect(gainNode);
-          gainNode.connect(audioCtxRef.current.destination);
+          gainNode.connect(metronomeGainRef.current || audioCtxRef.current.destination);   // 改這行
           osc.start(audioCtxRef.current.currentTime);
           osc.stop(audioCtxRef.current.currentTime + 0.1);
         }
@@ -168,6 +200,18 @@ export default function CPRPractice() {
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
     const ctx = audioCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
+
+    // 新增：建立節拍器總音量節點
+    if (!metronomeGainRef.current) {
+      metronomeGainRef.current = ctx.createGain();
+      metronomeGainRef.current.gain.value = 1.0;
+      metronomeGainRef.current.connect(ctx.destination);
+    }
+    // 新增：初始化語音教練（在按下開始按鈕時，符合 iOS 需使用者手勢的限制）
+    if (!voiceRef.current) {
+      voiceRef.current = new VoiceCoach({ onDuck: duckMetronome, onUnduck: unduckMetronome });
+    }
+    voiceRef.current.setEnabled(voiceOnRef.current);
     
     const buffer = ctx.createBuffer(1, 1, 22050);
     const source = ctx.createBufferSource();
@@ -183,6 +227,7 @@ export default function CPRPractice() {
 
     setIsTraining(false);
     isTrainingRef.current = false;
+    voiceRef.current?.stop();   // 新增：停止語音並還原音量
     setIsAnalyzing(true); // 開啟分析載入畫面
 
     let user = null;
@@ -474,6 +519,7 @@ export default function CPRPractice() {
                     const allErrors = [...bottomErrors];
                     if (depthIssue) allErrors.push(depthIssue);
                     setWarningMsg(allErrors.length > 0 ? allErrors.join(' | ') : '姿勢完美！');
+                    voiceRef.current?.update(allErrors); 
                     lastWarningTimeRef.current = now;
 
                     const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
@@ -590,15 +636,34 @@ export default function CPRPractice() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
           
-          <button 
-            onClick={switchCamera} 
-            className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={switchCamera} 
+              className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            >
+              {voiceOn ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5L6 9H2v6h4l5 4V5z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5L6 9H2v6h4l5 4V5z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M23 9l-6 6M17 9l6 6" />
+                </svg>
+              )}
+            </button>
+            
+            <button 
+              onClick={switchCamera} 
+              className="pointer-events-auto bg-black/40 text-white w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm active:scale-90 transition-transform shadow-lg border border-white/20"
+            >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
           </button>
         </div>
+      </div>  
 
         {showShoulderWarning && (
           <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 w-[90%] max-w-sm bg-amber-500/95 backdrop-blur-md rounded-2xl px-4 py-3 shadow-xl flex items-center justify-between gap-3">
