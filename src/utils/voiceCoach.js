@@ -5,12 +5,12 @@ const nowMs = () =>
 export class VoiceCoach {
   constructor(options = {}) {
     this.lang = options.lang || "zh-TW";
-    this.rate = options.rate ?? 1.35;   // 語速調快，縮短每句耗時
+    this.rate = options.rate ?? 1.4;   // 語速調快，縮短每句耗時
     this.pitch = options.pitch ?? 1.0;
     this.volume = options.volume ?? 1.0;
 
-    this.cooldownMs = options.cooldownMs ?? 2000; // 同一句話最短重複間隔
-    this.gapMs = options.gapMs ?? 120;            // 兩句之間的空檔
+    this.cooldownMs = options.cooldownMs ?? 1500; // 同一句話最短重複間隔
+    this.gapMs = options.gapMs ?? 70;            // 兩句之間的空檔
     this.staleMs = options.staleMs ?? 1500;       // 排隊超過這個時間就視為過期
     this.maxQueue = options.maxQueue ?? 3;        // 一次最多排幾句
 
