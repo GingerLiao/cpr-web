@@ -161,6 +161,14 @@ export default function EmergencyCamera() {
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
     const ctx = audioCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
+
+    // 新增：iOS 語音解鎖（必須在使用者手勢中先講一次）
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const warmUp = new SpeechSynthesisUtterance(' ');
+      warmUp.lang = 'zh-TW';
+      window.speechSynthesis.speak(warmUp);
+    }
     // 新增：建立節拍器總音量節點
     if (!metronomeGainRef.current) {
       metronomeGainRef.current = ctx.createGain();
