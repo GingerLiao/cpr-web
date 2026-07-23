@@ -14,7 +14,7 @@ export default function EmergencyCPR() {
   ];
 
   const handleEmergencyCall = () => {
-    const phoneNumber = "119"; 
+    const phoneNumber = "117"; 
     window.location.href = `tel:${phoneNumber}`;
   };
 
