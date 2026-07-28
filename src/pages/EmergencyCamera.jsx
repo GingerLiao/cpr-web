@@ -156,6 +156,7 @@ export default function EmergencyCamera() {
     lowestWristYRef.current = 0.0;
     deepestPostureRef.current = { isNotVertical: false, isOffset: false };
     bentFrameCountRef.current = 0;
+    lockedShoulderWidthPxRef.current = 0;
 
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();

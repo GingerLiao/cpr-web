@@ -195,6 +195,8 @@ export default function CPRPractice() {
     highestWristYRef.current = 1.0;
     lowestWristYRef.current = 0.0;
     deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
+    lockedShoulderWidthPxRef.current = 0;
+    bentFrameCountRef.current = 0;
     
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
