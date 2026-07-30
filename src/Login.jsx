@@ -51,7 +51,7 @@ const Login = () => {
             <label className="block text-slate-700 mb-1.5 font-semibold text-sm pl-1">帳號</label>
             <input
               type="email"
-              className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E09E75] focus:border-[#E09E75] transition-all duration-200 placeholder-slate-400"
+              className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#8B7EE0] focus:border-[#8B7EE0] transition-all duration-200 placeholder-slate-400"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="輸入您的 Email"
@@ -62,7 +62,7 @@ const Login = () => {
             <label className="block text-slate-700 mb-1.5 font-semibold text-sm pl-1">密碼</label>
             <input
               type="password"
-              className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E09E75] focus:border-[#E09E75] transition-all duration-200 placeholder-slate-400"
+              className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#8B7EE0] focus:border-[#8B7EE0] transition-all duration-200 placeholder-slate-400"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="輸入密碼"
@@ -83,7 +83,7 @@ const Login = () => {
         <div className="mt-8 text-center relative z-10 border-t border-slate-100 pt-6">
           <p className="text-sm text-slate-600 font-medium">
             {isRegistering ? '已經有帳號了？' : '還沒有帳號？'}
-            <button onClick={() => setIsRegistering(!isRegistering)} className="ml-2 text-[#6B908F] hover:text-[#5f8180] hover:underline font-semibold transition-colors duration-150">
+            <button onClick={() => setIsRegistering(!isRegistering)} className="ml-2 text-[#5B8DEF] hover:text-[#5f8180] hover:underline font-semibold transition-colors duration-150">
               {isRegistering ? '前往登入' : '立即註冊'}
             </button>
           </p>

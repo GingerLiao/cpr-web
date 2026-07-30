@@ -36,7 +36,9 @@ cpr-web/
 │   ├── pose_landmarker_full.task 
 │   └── vite.svg                  
 │
-├── src/                          
+├── src/ 
+│   ├── components/
+│   │  └── Mascot.jsx                         
 │   ├── assets/                   # 🖼️ 需打包的靜態資源 (圖片、SVG)
 │   │
 │   ├── pages/                    # 📄 頁面

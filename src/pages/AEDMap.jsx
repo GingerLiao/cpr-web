@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { supabase } from '../supabaseClient';
 import { getDistance, userIcon, aedIcon } from '../utils/helpers';
 
+
 // 負責在使用者位置更新時移動地圖視角的元件
 function MapUpdater({ center }) {
   const map = useMap();
@@ -100,16 +101,15 @@ export default function AEDMap() {
       {/* 套用手機容器版面 */}
       <div className="cpr-container">
         
-        {/* 套用共通 Header */}
-        <header className="cpr-header-center border-b-0 pb-4">
-          <button onClick={handleBack} className="cpr-icon-btn">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+        <header className="flex items-center justify-between px-6 pt-10 pb-4 relative z-20 pointer-events-none">
+          <button onClick={handleBack} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-slate-500 hover:bg-slate-50 active:scale-95 transition-all shrink-0 z-40 pointer-events-auto">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-          <h1 className="cpr-title text-[#6B908F] mr-12">尋找 AED</h1>
+          <h1 className="text-xl font-black text-[#2F2659] tracking-widest absolute left-1/2 transform -translate-x-1/2 z-40 pointer-events-auto">尋找 AED</h1>
         </header>
 
         <main className="flex-1 relative flex flex-col pb-0">
-          {/* 錯誤/讀取訊息 (配色改為琥珀色，比較柔和) */}
+          {/* 錯誤/讀取訊息 */}
           {errorMsg && (
             <div className="bg-amber-100 text-amber-800 text-xs px-4 py-2 text-center font-bold absolute w-full z-[1000] shadow-md flex items-center justify-center gap-2">
               {errorMsg.includes("中") && <div className="w-3 h-3 border-2 border-amber-800 border-t-transparent rounded-full animate-spin"></div>}
@@ -121,7 +121,7 @@ export default function AEDMap() {
           <div className="flex-1 w-full bg-slate-200 z-10 relative">
             {userLocation ? (
               <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" attribution='使用 CARTO' />
+                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution='使用 CARTO' />
                 <MapUpdater center={[userLocation.lat, userLocation.lng]} />
                 <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}><Popup>您在這裡</Popup></Marker>
                 
@@ -138,8 +138,8 @@ export default function AEDMap() {
                 ))}
               </MapContainer>
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-[#FAF8F5]">
-                <div className="w-10 h-10 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-full h-full flex items-center justify-center bg-[#F7F8FC]">
+                <div className="w-10 h-10 border-4 border-[#8B7EE0] border-t-transparent rounded-full animate-spin"></div>
               </div>
             )}
           </div>
@@ -159,13 +159,13 @@ export default function AEDMap() {
                       <div className="w-6 h-6 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center font-bold text-xs shrink-0">{index + 1}</div>
                       <div className="truncate">
                         <div className="font-bold text-slate-800 text-sm truncate">{aed.name}</div>
-                        <div className="text-xs text-[#6B908F] font-bold mt-0.5 truncate">位置：{aed.detail}</div>
+                        <div className="text-xs text-[#5B8DEF] font-bold mt-0.5 truncate">位置：{aed.detail}</div>
                         <div className="text-xs text-slate-500 mt-0.5 truncate">{aed.address}</div>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      {/* 距離顯示 (保留邏輯，改字體顏色) */}
-                      <div className="font-black text-[#E09E75]">{aed.distance < 1 ? `${Math.round(aed.distance * 1000)}m` : `${aed.distance.toFixed(1)}km`}</div>
+                      {/* 距離顯示  */}
+                      <div className="font-black text-[#3F74D6]">{aed.distance < 1 ? `${Math.round(aed.distance * 1000)}m` : `${aed.distance.toFixed(1)}km`}</div>
                       <a href={`https://www.google.com/maps/dir/?api=1&destination=${aed.lat},${aed.lng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] bg-rose-50 text-slate-600 px-2 py-1 rounded mt-1 inline-block font-bold active:scale-95">Google 導航</a>
                     </div>
                   </div>

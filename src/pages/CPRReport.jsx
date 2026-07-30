@@ -86,10 +86,10 @@ export default function CPRReport() {
 
   const getSeverity = (count) => {
     const ratio = totalPresses > 0 ? count / totalPresses : 0;
-    if (count === 0)   return { label: '完美', textColor: 'text-green-500', barColor: 'bg-green-500', bgColor: 'bg-green-100', ratio };
-    if (ratio <= 0.10) return { label: '警告', textColor: 'text-blue-500',  barColor: 'bg-blue-500',  bgColor: 'bg-blue-100',  ratio };
-    if (ratio <= 0.25) return { label: '注意', textColor: 'text-yellow-600', barColor: 'bg-yellow-400', bgColor: 'bg-yellow-100', ratio };
-    return               { label: '危險', textColor: 'text-red-600',   barColor: 'bg-red-500',   bgColor: 'bg-red-100',   ratio };
+    if (count === 0)   return { label: '完美', textColor: 'text-teal-500', barColor: 'bg-teal-400', bgColor: 'bg-teal-50', ratio };
+    if (ratio <= 0.10) return { label: '警告', textColor: 'text-[#8B7EE0]',  barColor: 'bg-[#8B7EE0]',  bgColor: 'bg-[#EFEBFB]',  ratio };
+    if (ratio <= 0.25) return { label: '注意', textColor: 'text-[#F59E0B]', barColor: 'bg-[#F59E0B]', bgColor: 'bg-[#FFF9EB]', ratio };
+    return               { label: '危險', textColor: 'text-[#E35E68]',   barColor: 'bg-[#E35E68]',   bgColor: 'bg-[#FFF5F6]',   ratio };
   };
 
   if (!location.state) {
@@ -115,61 +115,119 @@ export default function CPRReport() {
     { label: '按壓過深', count: reportData.errors.depthTooDeep || 0 }
   ];
 
+
   return (
-    <div className="cpr-layout">
-      <div className="cpr-container-scroll">
-        <header className="cpr-header-center">
-          <button onClick={handleBack} className="cpr-icon-btn">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+    <div className="cpr-layout bg-[#F8F9FE]">
+      <div className="cpr-container-scroll flex flex-col relative overflow-hidden h-full">
+        
+        {/* 頂部標題與返回鍵 */}
+        <header className="sticky top-0 bg-[#F8F9FE] flex items-center justify-between px-6 pt-10 pb-4 z-50">
+          <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-slate-500 hover:bg-slate-50 active:scale-95 transition-all shrink-0 z-40">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-          <h1 className="cpr-title text-[#E09E75] mr-12">練習分析</h1>
+          <h1 className="text-xl font-black text-[#2F2659] tracking-widest absolute left-1/2 transform -translate-x-1/2 z-40">練習分析</h1>
+          
+          {/* 右上角愛心角色 */}
+          <div className="absolute right-1 top-25 w-36 h-20 pointer-events-none z-30">
+            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-18 h-2.5 bg-slate-300/60 rounded-[100%] blur-[2px]"></div>
+            <img src="/mascot/history.png" alt="Mascot" className="w-full h-full object-contain relative z-10" />
+            <span className="absolute -top-1 right-4 text-purple-300 text-xl font-black opacity-70">✦</span>
+          </div>
         </header>
         
-        <main className="flex-1 px-6 pb-24 relative z-10">
-          <div className="text-slate-800 text-base font-bold mb-3">
-            DAY {reportData.date} <span className="text-slate-500 font-normal">{reportData.time}</span>
+        <main className="flex-1 px-6 pb-0 relative z-10">
+          
+          {/* 日期與時間區塊 */}
+          <div className="flex items-center gap-2 mb-4 mt-2">
+            <div className="w-7 h-7 bg-gradient-to-br from-[#EBF0FF] to-[#DCE6FF] border border-white shadow-sm rounded-lg flex items-center justify-center text-[#5B8DEF] shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            <span className="text-slate-800 font-bold text-sm tracking-wide">DAY {reportData.date}</span>
+            <span className="text-slate-400 font-medium text-sm ml-1">{reportData.time}</span>
           </div>
-          <div className="text-slate-800 text-base font-bold mb-6">
-            整體準確率 : <span className="text-rose-500">{reportData.accuracy}%</span>
+
+          {/*  整體準確率 */}
+          <div className="bg-white/80 backdrop-blur-sm border border-rose-50 rounded-2xl px-4 py-2 flex items-center justify-between mb-4 shadow-sm relative overflow-hidden w-full max-w-[240px]">
+            <div className="flex items-baseline gap-3 relative z-10">
+              <span className="text-slate-700 font-bold text-[15px]">整體準確率</span>
+              <div className="text-2xl font-black text-[#E35E68]">{reportData.accuracy}<span className="text-lg ml-0.5">%</span></div>
+            </div>
+            {/* 心跳波動裝飾線 */}
+            <svg className="absolute right-4 w-12 h-6 text-rose-200/50" viewBox="0 0 50 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M0 10h10l5-8 10 16 5-8h20" />
+            </svg>
           </div>
           
-          <div className="cpr-card border-[#E09E75]/20 mb-6">
-            <div className="absolute -top-5 left-5 bg-white border-4 border-[#E09E75]/20 w-10 h-10 rounded-full flex items-center justify-center shadow-sm">
-              <span className="text-[#E09E75] font-black">!</span>
+          {/* 常見錯誤分析卡片 */}
+          <div className="bg-white rounded-[2rem] p-5 mb-4 shadow-[0_2px_15px_rgba(0,0,0,0.03)] border border-slate-50 relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-full bg-[#EBF0FF] text-[#5B8DEF] flex items-center justify-center shadow-inner">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"></path></svg>
+              </div>
+              <h3 className="text-[17px] font-bold text-slate-800 tracking-wide">常見錯誤分析</h3>
             </div>
-            <h3 className="text-lg font-bold text-slate-800 mb-6 ml-10">常見錯誤分析</h3>
-            <div className="space-y-5">
+            
+            <div className="space-y-3">
               {errorItems.map((item, index) => {
                 const severity = getSeverity(item.count);
                 return (
-                  <div key={index}>
-                    <div className="flex justify-between items-end mb-1">
-                      <span className="font-bold text-slate-700 text-base">{item.label}</span>
-                      <span className="text-xs text-slate-500 font-bold">{item.count} 次</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-full ${severity.bgColor} h-3 rounded-full overflow-hidden flex`}>
-                        <div className={`${severity.barColor} h-full rounded-full`} style={{ width: `${Math.round(severity.ratio * 100)}%` }}></div>
+                  <div key={index} className="flex gap-4">
+                    
+                    <div className="flex-1 pt-0.5">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold text-slate-700 text-[15px]">{item.label}</span>
+                        <span className="text-[15px] font-bold text-slate-600">
+                          {item.count} <span className="text-[11px] text-slate-400 font-normal">次</span>
+                        </span>
                       </div>
-                      <span className={`text-xs font-bold ${severity.textColor} w-10 text-right`}>{severity.label}</span>
+          
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden flex">
+                          <div className={`${severity.barColor} h-full rounded-full transition-all duration-700`} style={{ width: `${Math.round(severity.ratio * 100)}%` }}></div>
+                        </div>
+                        <span className={`text-[12px] font-bold ${severity.textColor} shrink-0 w-6 text-right`}>
+                          {severity.label}
+                        </span>
+                      </div>
                     </div>
+
                   </div>
                 );
               })}
             </div>
           </div>
+        </main>
+        
+        {/* 改善建議底部區塊 */}
+        <div className="px-5 pb-8 w-full relative z-0 mt-1">
+          <div className="p-5 rounded-2xl bg-[#F4F7FF] border border-[#5B8DEF]/20 shadow-sm relative overflow-hidden">
+            {/* 左側藍色邊條 */}
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-[#5B8DEF]/60"></div>
+            
+            <div className="pl-2">
+              {/* 標題與燈泡圖示 */}
+              <div className="flex items-center gap-2 mb-2">
+                <svg className="w-5 h-5 text-[#5B8DEF] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <span className="font-bold text-[#5B8DEF] text-base tracking-wide">改善建議</span>
+              </div>
 
-          <div className="cpr-card border-[#6B908F]/20 mb-8 bg-teal-50/30">
-            <h3 className="text-base font-bold text-[#6B908F] mb-3 tracking-wide">改善建議</h3>
-            <div className="text-slate-700 text-sm font-medium leading-relaxed whitespace-pre-line">
-              {aiAdvice}
+              {/* 建議內容 */}
+              <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-line text-justify">
+                {aiAdvice}
+              </p>
             </div>
           </div>
-          
-          <div className="flex justify-end">
-            <button onClick={() => navigate('/practice')} className="cpr-btn-primary">再次練習</button>
+
+          {/* 再次練習按鈕 */}
+          <div className="flex justify-end mt-6">
+            <button onClick={() => navigate('/practice')} className="bg-[#5B8DEF] text-white font-bold py-3.5 px-8 rounded-full shadow-md active:scale-95 transition-transform hover:bg-[#4A7BD5] tracking-wider">
+              再次練習
+            </button>
           </div>
-        </main>
+        </div>
+
       </div>
     </div>
   );

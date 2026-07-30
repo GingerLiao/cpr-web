@@ -701,7 +701,7 @@ export default function CPRPractice() {
 
           <div className="pointer-events-auto">
             {!isTraining ? (
-              <button onClick={handleStartTraining} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm px-6 py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center gap-2 w-36">
+              <button onClick={handleStartTraining} className="bg-[#5B8DEF]/90 backdrop-blur-sm text-white font-bold text-sm px-6 py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center gap-2 w-36">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <polygon points="6,4 16,10 6,16" />
                 </svg>
@@ -722,7 +722,7 @@ export default function CPRPractice() {
       {/* ✅ 新增：AI 分析中的載入畫面 */}
       {isAnalyzing && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-[999] flex flex-col items-center justify-center text-white animate-fade-in">
-           <div className="w-16 h-16 border-4 border-[#E09E75] border-t-transparent rounded-full animate-spin mb-6"></div>
+           <div className="w-16 h-16 border-4 border-[#8B7EE0] border-t-transparent rounded-full animate-spin mb-6"></div>
            <h2 className="text-xl font-bold tracking-wider mb-2">正在分析您的 CPR 練習數據...</h2>
         </div>
       )}

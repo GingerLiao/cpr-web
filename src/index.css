@@ -1,103 +1,104 @@
-/* src/index.css */
 @import "tailwindcss";
 
+:root {
+  --cpr-bg:         #f7f8fc;   /* 頁面底色：近白 */
+  --cpr-surface:    #ffffff;   /* 卡片底色 */
+  --cpr-ink:        #37324f;   /* 主要文字 */
+  --cpr-ink-soft:   #7a7593;   /* 次要文字 */
+  --cpr-line:       #eee9f6;   /* 邊框線 */
+
+  --cpr-primary:        #8b7ee0;  /* 主色：薰衣草紫 */
+  --cpr-primary-strong: #6f61c9;
+  --cpr-blue:           #5b8def;  /* 輔助：藍 */
+  --cpr-blue-strong:    #3f6fd6;
+  --cpr-indigo:         #4151C8;
+  --cpr-pink:           #ff8fb0;  /* 粉：少量點綴 */
+
+  --cpr-danger:         #e5484d;  /* 緊急紅 */
+  --cpr-danger-strong:  #c93b40;
+
+  --cpr-grad-primary: linear-gradient(120deg, #9a8cf0 0%, #7a7fe6 100%);
+  --cpr-grad-blue:    linear-gradient(120deg, #7aa8ff 0%, #5b8def 100%);
+  --cpr-grad-danger:  linear-gradient(135deg, #ff5570 0%, #ff8a7e 100%);
+}
+
 @layer components {
-  /* =========================================
-     共用版面配置 (Layout)
-  ========================================= */
   .cpr-layout {
-    @apply bg-[#FAF8F5] min-h-[100dvh] flex justify-center font-sans;
+    @apply min-h-[100dvh] flex justify-center font-sans;
+    background: var(--cpr-bg);
+    color: var(--cpr-ink);
   }
   
-  .cpr-container {
-    @apply w-full max-w-md bg-[#FAF8F5] h-[100dvh] relative flex flex-col shadow-2xl overflow-hidden;
-  }
-
+  .cpr-container,
   .cpr-container-scroll {
-    @apply w-full max-w-md bg-[#FAF8F5] h-[100dvh] relative flex flex-col shadow-2xl overflow-hidden overflow-y-auto;
+    @apply w-full max-w-md h-[100dvh] relative flex flex-col shadow-2xl overflow-hidden;
+    /* 已移除暈染漸層，只保留單一底色 */
+    background: var(--cpr-bg);
+  }
+  .cpr-container-scroll { @apply overflow-y-auto; }
+
+  /* 每頁不同色調：已移除暈染漸層，統一使用基本底色 */
+  .cpr-bg-blue {
+    background: var(--cpr-bg);
+  }
+  .cpr-bg-violet {
+    background: var(--cpr-bg);
+  }
+  .cpr-bg-warm {
+    background: var(--cpr-bg);
   }
 
-  /* =========================================
-     頂部導航與標題 (Header)
-  ========================================= */
-  .cpr-header {
-    @apply flex justify-between items-center px-8 pb-4 pt-12 relative z-20;
-  }
+  .cpr-header { @apply flex justify-between items-center px-8 pb-4 pt-12 relative z-20; }
+  .cpr-header-center { @apply flex items-center px-8 pb-4 pt-12 z-20 relative; background: transparent; }
+  .cpr-title { @apply flex-1 text-center text-2xl font-bold tracking-wider; }
 
-  .cpr-header-center {
-    @apply flex items-center px-8 pb-4 pt-12 z-20 bg-[#FAF8F5] relative;
-  }
-
-  .cpr-title {
-    @apply flex-1 text-center text-2xl font-bold tracking-wider;
-  }
-
-  /* =========================================
-     按鈕與卡片 (Buttons & Cards)
-  ========================================= */
-  
- /* 1. 一般返回按鈕 (較小：48px) - 其他頁面會自動套用這個 */
   .cpr-icon-btn {
-    @apply w-12 h-12 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/60 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-[#6B908F] hover:bg-[#D7E4DE] z-10;
+    @apply w-12 h-12 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/70 border rounded-full shadow-sm z-10;
+    border-color: var(--cpr-line); color: var(--cpr-ink-soft);
   }
+  .cpr-icon-btn:hover { color: var(--cpr-blue); background: #eef2fd; }
 
-  /* 2. 首頁登出按鈕 (較大：56px) - 專門給首頁使用 */
   .cpr-icon-btn-lg {
-    @apply w-14 h-14 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/60 border border-slate-200/50 rounded-full shadow-sm text-slate-500 hover:text-[#E09E75] hover:bg-orange-50 z-10;
+    @apply w-14 h-14 flex shrink-0 justify-center items-center active:scale-90 transition-transform bg-white/70 border rounded-full shadow-sm z-10;
+    border-color: var(--cpr-line); color: var(--cpr-ink-soft);
   }
+  .cpr-icon-btn-lg:hover { color: var(--cpr-primary); background: #f1eefc; }
 
-  /* 首頁四大功能選單按鈕 */
   .cpr-menu-btn {
-    @apply bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl shadow-gray-100/50 border-4 relative;
+    @apply bg-white rounded-3xl flex flex-col items-center justify-center gap-4 p-5 active:scale-95 transition-all shadow-xl border relative;
+    border-color: var(--cpr-line);
   }
-
-  /* 分析報告、圖表、相機畫面的內容卡片 */
   .cpr-card {
-    @apply bg-white rounded-3xl p-6 shadow-xl shadow-gray-100/50 border-4 relative;
+    @apply bg-white rounded-3xl p-6 shadow-xl border relative;
+    border-color: var(--cpr-line);
   }
 
-  /* 主要按鈕 (如：再次練習) */
   .cpr-btn-primary {
-    @apply bg-[#E09E75] text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-md active:scale-95 transition-all hover:bg-[#C77F52] text-center flex items-center justify-center gap-2;
+    @apply text-white px-8 py-3.5 rounded-2xl font-bold text-lg shadow-md active:scale-95 transition-all text-center flex items-center justify-center gap-2;
+    background: var(--cpr-grad-primary);
   }
+  .cpr-btn-primary:hover { filter: brightness(0.96); }
 
-  /* 次要按鈕 (如：登入註冊) */
   .cpr-btn-secondary {
-    @apply bg-[#6B908F] text-white px-8 py-3.5 rounded-xl font-bold text-lg hover:bg-[#3C6D6B] active:scale-95 transition-all shadow-md text-center flex items-center justify-center gap-2;
+    @apply text-white px-8 py-3.5 rounded-2xl font-bold text-lg active:scale-95 transition-all shadow-md text-center flex items-center justify-center gap-2;
+    background: var(--cpr-grad-blue);
   }
+  .cpr-btn-secondary:hover { filter: brightness(0.96); }
 
-  /* 警告按鈕 (如：登出) */
   .cpr-btn-danger {
-    @apply bg-rose-50 text-rose-600 hover:bg-rose-100 px-8 py-3.5 rounded-xl font-bold text-lg active:scale-95 transition-all border border-rose-100 text-center flex items-center justify-center gap-2;
+    @apply bg-rose-50 text-rose-600 hover:bg-rose-100 px-8 py-3.5 rounded-2xl font-bold text-lg active:scale-95 transition-all border border-rose-100 text-center flex items-center justify-center gap-2;
   }
 }
 
-/* =========================================
-   全域基本設定
-========================================= */
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overscroll-behavior-y: none;
-}
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overscroll-behavior-y: none; }
 
-/* =========================================
-   動畫與特效 
-========================================= */
-.custom-user-icon div {
-  animation: pulse 2s infinite;
-}
+.custom-user-icon div { animation: pulse 2s infinite; }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(91,141,239,0.7); }
+  70%  { box-shadow: 0 0 0 10px rgba(91,141,239,0); }
+  100% { box-shadow: 0 0 0 0 rgba(91,141,239,0); }
 }
 .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
 .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }

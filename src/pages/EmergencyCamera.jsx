@@ -527,7 +527,7 @@ export default function EmergencyCamera() {
 
         <div className="absolute bottom-8 right-6 z-20">
           {!isTraining ? (
-            <button onClick={handleStartEmergency} className="bg-[#6B908F]/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center justify-center gap-2 w-36">
+            <button onClick={handleStartEmergency} className="bg-[#5B8DEF]/90 backdrop-blur-sm text-white font-bold text-sm py-3 rounded-full shadow-2xl active:scale-95 transition-transform border border-teal-600/30 flex items-center justify-center gap-2 w-36">
               <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <polygon points="6,4 16,10 6,16" />
               </svg>
