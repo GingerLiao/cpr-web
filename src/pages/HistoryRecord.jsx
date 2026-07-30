@@ -15,9 +15,8 @@ export default function HistoryRecord() {
   const [isLoading, setIsLoading] = useState(true);
   const [isQuizLoading, setIsQuizLoading] = useState(true);
 
-  // 🌟 AI 分析功能新增：狀態管理 (改為自由輸入與類型)
-  const [analysisType, setAnalysisType] = useState('times'); // 'times' (次) 或 'days' (天)
-  const [analysisValue, setAnalysisValue] = useState(5); // 預設數值為 5
+  // 🌟 AI 分析功能：天數選擇 (3, 7, 30 天)
+  const [analysisDays, setAnalysisDays] = useState(3); 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiFeedback, setAiFeedback] = useState('');
 
@@ -52,11 +51,11 @@ export default function HistoryRecord() {
             bpm: item.bpm,
             aiAdvice: item.ai_advice,
             errors: { 
-              armBent: item.armBent, 
-              notVertical: item.notVertical, 
-              positionOffset: item.positionOffset,
-              depthTooShallow: item.depthTooShallow,
-              depthTooDeep: item.depthTooDeep
+              armBent: item.armBent || 0, 
+              notVertical: item.notVertical || 0, 
+              positionOffset: item.positionOffset || 0,
+              depthTooShallow: item.depthTooShallow || 0,
+              depthTooDeep: item.depthTooDeep || 0
             }
           })));
         }
@@ -89,70 +88,96 @@ export default function HistoryRecord() {
     fetchRecords();
   }, [isGuest]);
 
-  // 🌟 修改後的資料篩選邏輯：支援自由輸入數值
-  const getFilteredData = (data, type, value) => {
-    if (!data || data.length === 0) return [];
-    
-    // 確保輸入的是有效正整數
-    const num = parseInt(value, 10);
-    if (isNaN(num) || num <= 0) return [];
-    
-    if (type === 'times') {
-      // 按次數篩選
-      return data.slice(0, num);
-    } else if (type === 'days') {
-      // 按天數篩選
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() - num);
+  // 🌟 新增：依「有練習的天數」分組並計算「日平均數據」
+  const getDailyAggregatedData = (historyData, targetDays) => {
+    if (!historyData || historyData.length === 0) return [];
 
-      return data.filter(item => {
-        const itemDate = new Date(item.date.replace(/-/g, '/')); 
-        return itemDate >= targetDate;
-      });
-    }
-    return [];
+    const dailyMap = {};
+
+    // 1. 將所有紀錄按日期累加
+    historyData.forEach(record => {
+      const d = record.date;
+      if (!dailyMap[d]) {
+        dailyMap[d] = {
+          date: d,
+          totalAccuracy: 0,
+          totalCount: 0,
+          totalBpm: 0,
+          armBent: 0,
+          notVertical: 0,
+          positionOffset: 0,
+          depthTooShallow: 0,
+          depthTooDeep: 0,
+          sessionsCount: 0
+        };
+      }
+
+      dailyMap[d].totalAccuracy += record.accuracy;
+      dailyMap[d].totalCount += record.count;
+      dailyMap[d].totalBpm += record.bpm;
+      dailyMap[d].armBent += (record.errors?.armBent || 0);
+      dailyMap[d].notVertical += (record.errors?.notVertical || 0);
+      dailyMap[d].positionOffset += (record.errors?.positionOffset || 0);
+      dailyMap[d].depthTooShallow += (record.errors?.depthTooShallow || 0);
+      dailyMap[d].depthTooDeep += (record.errors?.depthTooDeep || 0);
+      dailyMap[d].sessionsCount += 1;
+    });
+
+    // 2. 轉為陣列並計算當天平均值
+    const aggregatedArray = Object.keys(dailyMap).map(date => {
+      const item = dailyMap[date];
+      const count = item.sessionsCount;
+      return {
+        date: item.date,
+        sessionsCount: count, // 當天練習了幾次
+        accuracy: Math.round(item.totalAccuracy / count),
+        avgCount: Math.round(item.totalCount / count),
+        bpm: Math.round(item.totalBpm / count),
+        errors: {
+          armBent: (item.armBent / count).toFixed(1),
+          notVertical: (item.notVertical / count).toFixed(1),
+          positionOffset: (item.positionOffset / count).toFixed(1),
+          depthTooShallow: (item.depthTooShallow / count).toFixed(1),
+          depthTooDeep: (item.depthTooDeep / count).toFixed(1)
+        }
+      };
+    });
+
+    // 3. 按日期從舊到新排序 (確保取最後 N 天時是最新有練習的天數)
+    aggregatedArray.sort((a, b) => new Date(a.date.replace(/-/g, '/')) - new Date(b.date.replace(/-/g, '/')));
+
+    // 4. 取最後 targetDays 天（即「最新有練習紀錄的 N 天」）
+    return aggregatedArray.slice(-targetDays);
   };
 
+  // 🌟 AI 觸發分析與組裝 Prompt
   const handleAnalyze = async () => {
-    // 檢查使用者輸入是否合法
-    if (!analysisValue || parseInt(analysisValue, 10) <= 0) {
-      setAiFeedback('請輸入大於 0 的有效數值喔！');
-      return;
-    }
-
     setIsAnalyzing(true);
     setAiFeedback('');
     
     try {
-      const sourceData = activeTab === 'cpr' ? cprHistory : quizHistory;
-      const filteredData = getFilteredData(sourceData, analysisType, analysisValue);
+      // 取得最新 N 天有練習紀錄的平均數據
+      const filteredDailyData = getDailyAggregatedData(cprHistory, analysisDays);
       
-      if (filteredData.length === 0) {
-        setAiFeedback(`選定的範圍內（近 ${analysisValue} ${analysisType === 'times' ? '次' : '天'}）目前沒有紀錄可以分析喔！`);
+      if (filteredDailyData.length === 0) {
+        setAiFeedback('目前尚無練習紀錄可以分析喔！');
         setIsAnalyzing(false);
         return;
       }
 
-      // 準備發送給 AI Agent 的 Prompt (動態帶入使用者輸入的範圍)
-      let prompt = `你是一位專業的 CPR 與急救指導教練。請根據以下學員在近 ${analysisValue} ${analysisType === 'times' ? '次' : '天'} 內的練習紀錄，給予100字以內的綜合評價與1到2點具體的改進建議。\n\n`;
+      // 準備發送給 AI 的 Prompt
+      let prompt = `你是一位專業的 CPR 與急救指導教練。以下是學員「最近有練習紀錄的 ${filteredDailyData.length} 天」的每日平均 CPR 實作數據。\n請針對這些日期的表現趨勢給予 100 字以內的綜合評價與 1 到 2 點具體的改進建議。\n\n`;
       
-      if (activeTab === 'cpr') {
-        prompt += `【CPR 練習數據】\n`;
-        filteredData.forEach((r, i) => {
-          prompt += `${i+1}. [${r.date} ${r.time}] 準確率:${r.accuracy}%, 次數:${r.count}, 頻率:${r.bpm}BPM | 扣分動作(手臂彎曲:${r.errors.armBent}, 深度太淺:${r.errors.depthTooShallow}, 深度太深:${r.errors.depthTooDeep}, 偏移:${r.errors.positionOffset})\n`;
-        });
-      } else {
-        prompt += `【考照題庫數據】\n`;
-        filteredData.forEach((r, i) => {
-          prompt += `${i+1}. [${r.date} ${r.time}] 分數:${r.score}分, 答對題數:${r.correct}/${r.total}\n`;
-        });
-      }
+      prompt += `【每日平均 CPR 練習數據】\n`;
+      filteredDailyData.forEach((r, i) => {
+        prompt += `${i+1}. 日期:${r.date} (當天練習${r.sessionsCount}次) | 平均準確率:${r.accuracy}%, 平均按壓數:${r.avgCount}, 平均頻率:${r.bpm}BPM | 平均扣分動作(手臂彎曲:${r.errors.armBent}次, 深度過淺:${r.errors.depthTooShallow}次, 深度過深:${r.errors.depthTooDeep}次, 姿勢偏移:${r.errors.positionOffset}次, 前傾不足:${r.errors.notVertical}次)\n`;
+      });
 
-      // 呼叫現有的 Supabase Edge Function
+      // 呼叫 Edge Function
       const { data, error } = await supabase.functions.invoke('generate-cpr-advice', {
         body: { 
           prompt: prompt,
-          type: activeTab 
+          type: 'cpr'
         }
       });
 
@@ -174,42 +199,32 @@ export default function HistoryRecord() {
     }
   };
 
-  // 🌟 修改後的 AI 區塊元件：自訂輸入框 UI
-  const renderAiAnalysisSection = () => (
-    <div className={`cpr-card border-opacity-50 !p-5 mb-6 ${activeTab === 'cpr' ? 'border-[#E09E75] bg-[#E09E75]/5' : 'border-[#D4A373] bg-[#D4A373]/5'}`}>
+  // 🌟 CPR 專用的 AI 分析 UI 區塊
+  const renderCprAiAnalysisSection = () => (
+    <div className="cpr-card border-[#E09E75]/50 bg-[#E09E75]/5 !p-5 mb-6">
       <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm">
-        <svg className={`w-5 h-5 ${activeTab === 'cpr' ? 'text-[#E09E75]' : 'text-[#D4A373]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-        AI 學習狀態分析
+        <svg className="w-5 h-5 text-[#E09E75]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        AI 練習狀態分析
       </h3>
       
       <div className="flex gap-2 mb-2 items-center">
         <span className="text-sm text-slate-600 font-bold whitespace-nowrap">分析近</span>
         
-        {/* 自由輸入框 */}
-        <input 
-          type="number" 
-          min="1"
-          value={analysisValue}
-          onChange={(e) => setAnalysisValue(e.target.value)}
-          className="w-16 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-opacity-50 text-center"
-          style={{ focusRingColor: activeTab === 'cpr' ? '#E09E75' : '#D4A373' }}
-        />
-        
-        {/* 切換 次/天 下拉選單 */}
+        {/* 下拉選單：3, 7, 30 天 (有練習紀錄的日子) */}
         <select 
-          value={analysisType} 
-          onChange={(e) => setAnalysisType(e.target.value)}
-          className="flex-1 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all"
-          style={{ focusRingColor: activeTab === 'cpr' ? '#E09E75' : '#D4A373' }}
+          value={analysisDays} 
+          onChange={(e) => setAnalysisDays(Number(e.target.value))}
+          className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#E09E75]/50 transition-all"
         >
-          <option value="times">次紀錄</option>
-          <option value="days">天內紀錄</option>
+          <option value={3}>3 天練習紀錄</option>
+          <option value={7}>7 天練習紀錄</option>
+          <option value={30}>30 天練習紀錄</option>
         </select>
         
         <button 
           onClick={handleAnalyze}
           disabled={isAnalyzing}
-          className={`text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 whitespace-nowrap shadow-sm ${activeTab === 'cpr' ? 'bg-[#E09E75] hover:bg-[#c98b64]' : 'bg-[#D4A373] hover:bg-[#b88c5e]'}`}
+          className="text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 whitespace-nowrap shadow-sm bg-[#E09E75] hover:bg-[#c98b64]"
         >
           {isAnalyzing ? '分析中...' : '開始分析'}
         </button>
@@ -414,10 +429,6 @@ export default function HistoryRecord() {
             <main className="flex-1 overflow-y-auto p-6 pb-24">
               {activeTab === 'quiz' && (
                 <div className="animate-fade-in">
-                  
-                  {/* 🌟 插入 AI 分析區塊 (題庫用) */}
-                  {renderAiAnalysisSection()}
-
                   {totalBankCount > 0 && (
                     <div className="cpr-card border-[#D4A373]/20 !p-5 mb-6">
                       <div className="flex items-center justify-between mb-3">
@@ -465,8 +476,8 @@ export default function HistoryRecord() {
               {activeTab === 'cpr' && (
                 <div className="animate-fade-in">
                   
-                  {/* 🌟 插入 AI 分析區塊 (CPR用) */}
-                  {renderAiAnalysisSection()}
+                  {/* 🌟 只在 CPR 練習保留 AI 分析區塊 */}
+                  {renderCprAiAnalysisSection()}
 
                   <div className="cpr-card border-[#E09E75]/20 !p-5 mb-6">
                     {/* 標題列 + 頁籤 */}
