@@ -124,28 +124,70 @@ export default function Home({ session, isGuest }) {
             <div className="grid grid-cols-2 gap-4 h-full relative z-20 mt-[35px]">
               
               {/* 尋找 AED */}
-              <button onClick={() => navigate('/aed')} className="cpr-menu-btn border-[#3F74D6]/20 flex flex-col items-center justify-center gap-5 bg-white rounded-[2rem] shadow-sm">
-                <span className="text-[#3F74D6] text-[16px] font-bold text-base tracking-wider z-10 mt-1">尋找 AED</span>
-                <div className="z-10 mb-1"><AedIcon /></div>
+              <button 
+                onClick={() => navigate('/aed')} 
+                className="group cpr-menu-btn border-[#3F74D6]/15 hover:border-[#3F74D6]/40 flex flex-col items-center justify-center gap-4 bg-white/95 backdrop-blur-sm rounded-[2rem] shadow-[0_4px_20px_rgba(63,116,214,0.06)] hover:shadow-[0_8px_25px_rgba(63,116,214,0.12)] transition-all duration-300 relative overflow-hidden"
+              >
+                {/* 頂部高光導角 */}
+                <div className="absolute top-0 inset-x-6 h-[2px] bg-gradient-to-r from-transparent via-[#3F74D6]/30 to-transparent opacity-80" />
+
+                <span className="text-[#3F74D6] text-[16px] font-bold tracking-wider z-10 mt-3 font-maru">
+                  尋找 AED
+                </span>
+                <div className="z-10 mb-1 transform group-hover:-translate-y-0.5 transition-transform duration-300">
+                  <AedIcon />
+                </div>
               </button>
 
               {/* CPR 練習 */}
-              <button onClick={() => navigate('/practice')} className="cpr-menu-btn border-[#EC6A9C]/20 flex flex-col items-center justify-center gap-5 bg-white rounded-[2rem] shadow-sm">
-                <span className="text-[#EC6A9C] font-bold text-base tracking-wider z-10 mt-1">CPR 練習</span>
-                <div className="z-10 mb-1"><CprIcon /></div>
+              <button 
+                onClick={() => navigate('/practice')} 
+                className="group cpr-menu-btn border-[#EC6A9C]/15 hover:border-[#EC6A9C]/40 flex flex-col items-center justify-center gap-4 bg-white/95 backdrop-blur-sm rounded-[2rem] shadow-[0_4px_20px_rgba(236,106,156,0.06)] hover:shadow-[0_8px_25px_rgba(236,106,156,0.12)] transition-all duration-300 relative overflow-hidden"
+              >
+                {/* 頂部高光導角 */}
+                <div className="absolute top-0 inset-x-6 h-[2px] bg-gradient-to-r from-transparent via-[#EC6A9C]/30 to-transparent opacity-80" />
+                
+                <span className="text-[#EC6A9C] font-bold text-base tracking-wider z-10 mt-3 font-maru">
+                  CPR 練習
+                </span>
+                <div className="z-10 mb-1 transform group-hover:-translate-y-0.5 transition-transform duration-300">
+                  <CprIcon />
+                </div>
               </button>
 
               {/* 考照題庫 */}
-              <button onClick={() => navigate('/quiz')} className="cpr-menu-btn border-[#8B7EE0]/20 flex flex-col items-center justify-center gap-5 bg-white rounded-[2rem] shadow-sm">
-                <div className="z-10 mt-1"><QuizIcon /></div>
-                <span className="text-[#8B7EE0] font-bold text-base tracking-wider z-10 mb-1">考照題庫</span>
+              <button 
+                onClick={() => navigate('/quiz')} 
+                className="group cpr-menu-btn border-[#8B7EE0]/15 hover:border-[#8B7EE0]/40 flex flex-col items-center justify-center gap-4 bg-white/95 backdrop-blur-sm rounded-[2rem] shadow-[0_4px_20px_rgba(139,126,224,0.06)] hover:shadow-[0_8px_25px_rgba(139,126,224,0.12)] transition-all duration-300 relative overflow-hidden"
+              >
+                {/* 頂部高光導角 */}
+                <div className="absolute top-0 inset-x-6 h-[2px] bg-gradient-to-r from-transparent via-[#8B7EE0]/30 to-transparent opacity-80" />
+            
+                <div className="z-10 mt-3 transform group-hover:-translate-y-0.5 transition-transform duration-300">
+                  <QuizIcon />
+                </div>
+                <span className="text-[#8B7EE0] font-bold text-base tracking-wider z-10 mb-1 font-maru">
+                  考照題庫
+                </span>
               </button>
 
               {/* 歷史紀錄 */}
-              <button onClick={() => navigate('/history')} className="cpr-menu-btn border-[#6366F1]/20 flex flex-col items-center justify-center gap-5 bg-white rounded-[2rem] shadow-sm">
-                <div className="z-10 mt-1"><HistoryIcon /></div>
-                <span className="text-[#5257e0] font-bold text-base tracking-wider z-10 mb-1">歷史紀錄</span>
+              <button 
+                onClick={() => navigate('/history')} 
+                className="group cpr-menu-btn border-[#6366F1]/15 hover:border-[#6366F1]/40 flex flex-col items-center justify-center gap-4 bg-white/95 backdrop-blur-sm rounded-[2rem] shadow-[0_4px_20px_rgba(99,102,241,0.06)] hover:shadow-[0_8px_25px_rgba(99,102,241,0.12)] transition-all duration-300 relative overflow-hidden"
+              >
+                {/* 頂部高光導角 */}
+                <div className="absolute top-0 inset-x-6 h-[2px] bg-gradient-to-r from-transparent via-[#6366F1]/30 to-transparent opacity-80" />
+              
+                
+                <div className="z-10 mt-3 transform group-hover:-translate-y-0.5 transition-transform duration-300">
+                  <HistoryIcon />
+                </div>
+                <span className="text-[#5257e0] font-bold text-base tracking-wider z-10 mb-1 font-maru">
+                  歷史紀錄
+                </span>
               </button>
+
 
               {/* 中央緊急 CPR 按鈕 */}
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-30">
