@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import Mascot from '../components/Mascot';
 
 export default function Home({ session, isGuest }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileModal, setShowProfileModal] = useState(false); 
   const [shoulderWidth, setShoulderWidth] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
@@ -17,6 +18,12 @@ export default function Home({ session, isGuest }) {
     localStorage.removeItem('isGuest');
     window.location.href = "/login";
   };
+
+  useEffect(() => {
+    if (location.state?.openProfile) {
+      setShowProfileModal(true);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     async function loadShoulderWidth() {
@@ -67,6 +74,8 @@ export default function Home({ session, isGuest }) {
   };
 
   const userEmail = session?.user?.email || "";
+  const hasShoulderWidth = Number.isFinite(Number(shoulderWidth)) && Number(shoulderWidth) > 0;
+  const showShoulderHint = !hasShoulderWidth;
 
   return (
     // 1. 最外層：滿版、灰色背景、並且 flex 置中
@@ -95,12 +104,19 @@ export default function Home({ session, isGuest }) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
             </button>
-            <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-2 bg-white shadow-sm border border-slate-100 rounded-full pl-1.5 pr-3 py-1.5 active:scale-95 transition-transform">
-              <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-[#FCE3EC]">
-                <UserAvatar />
-              </div>
-              <span className="text-[11px] font-bold text-slate-600">Hi, 你好! <span className="ml-1 text-slate-400">▼</span></span>
-            </button>
+            <div className="relative flex items-center">
+              <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-2 bg-white shadow-sm border border-slate-100 rounded-full pl-1.5 pr-3 py-1.5 active:scale-95 transition-transform">
+                <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-[#FCE3EC]">
+                  <UserAvatar />
+                </div>
+                <span className="text-[12px] font-bold text-slate-600">設定<span className="ml-1 text-slate-400">▼</span></span>
+              </button>
+              {showShoulderHint && (
+                <div className="absolute top-full right-0 mt-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 shadow-sm whitespace-nowrap">
+                  首次使用請先輸入肩寬長度
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

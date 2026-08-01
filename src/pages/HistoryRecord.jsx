@@ -503,105 +503,6 @@ export default function HistoryRecord() {
                     </div>
                   )}
 
-                  {/* 圖表區塊 (每日平均趨勢 - Quiz頁也共用顯示) */}
-                  <div className="bg-white rounded-[2rem] p-6 mb-4 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-slate-50">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-slate-700 font-bold text-[15px] flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#8B7EE0]" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path></svg>
-                        每日平均趨勢
-                      </h4>
-                      <div className="flex bg-white border border-slate-100 rounded-full p-1 shadow-sm">
-                        {['趨勢', '今日'].map((label, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => setChartTab(idx)}
-                            className={`text-xs font-bold px-4 py-1.5 rounded-full transition-all ${chartTab === idx ? 'bg-[#8B7EE0] text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="overflow-hidden" onTouchStart={handleChartTouchStart} onTouchEnd={handleChartTouchEnd}>
-                      <div className="flex transition-transform duration-300" style={{ transform: `translateX(-${chartTab * 100}%)` }}>
-                        <div className="shrink-0 w-full">
-                          {isLoading ? (
-                            <div className="w-full h-40 flex items-center justify-center">
-                              <div className="w-8 h-8 border-4 border-[#8B7EE0] border-t-transparent rounded-full animate-spin"></div>
-                            </div>
-                          ) : chartData.length > 0 ? (
-                            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-                              <defs>
-                                <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#8B7EE0" stopOpacity="0.25"/>
-                                  <stop offset="100%" stopColor="#8B7EE0" stopOpacity="0"/>
-                                </linearGradient>
-                              </defs>
-                              {[0, 25, 50, 75, 100].map(v => (
-                                <g key={v}>
-                                  <line x1={PAD.l} y1={cy(v)} x2={PAD.l + cw} y2={cy(v)} stroke="#f1f5f9" strokeWidth="1" />
-                                  <text x={PAD.l - 6} y={cy(v) + 3.5} fontSize="9" fill="#94a3b8" textAnchor="end" fontWeight="600">{v}</text>
-                                </g>
-                              ))}
-                              <path d={areaPath} fill="url(#chartGradient)" />
-                              <path d={linePath} fill="none" stroke="#8B7EE0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                              {chartData.map((d, i) => (
-                                <g key={d.date}>
-                                  <circle cx={cx(i)} cy={cy(d.accuracy)} r="4" fill="#fff" stroke="#8B7EE0" strokeWidth="2.5" />
-                                  <text x={cx(i)} y={cy(d.accuracy) - 8} fontSize="9" fill="#8B7EE0" textAnchor="middle" fontWeight="bold">{d.accuracy}%</text>
-                                  <text x={cx(i)} y={SVG_H - 4} fontSize="9" fill="#94a3b8" textAnchor="middle" fontWeight="600">{d.date.slice(5)}</text>
-                                </g>
-                              ))}
-                            </svg>
-                          ) : (
-                            <div className="w-full h-40 flex items-center justify-center text-slate-400 font-medium text-sm">尚無練習數據</div>
-                          )}
-                        </div>
-                        <div className="shrink-0 w-full">
-                          {isLoading ? (
-                            <div className="w-full h-40 flex items-center justify-center">
-                              <div className="w-8 h-8 border-4 border-[#8B7EE0] border-t-transparent rounded-full animate-spin"></div>
-                            </div>
-                          ) : todayRecords.length > 0 ? (
-                            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-                              <defs>
-                                <linearGradient id="todayGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#5B8DEF" stopOpacity="0.25"/>
-                                  <stop offset="100%" stopColor="#5B8DEF" stopOpacity="0"/>
-                                </linearGradient>
-                              </defs>
-                              {[0, 25, 50, 75, 100].map(v => (
-                                <g key={v}>
-                                  <line x1={PAD.l} y1={cy(v)} x2={PAD.l + cw} y2={cy(v)} stroke="#f1f5f9" strokeWidth="1" />
-                                  <text x={PAD.l - 6} y={cy(v) + 3.5} fontSize="9" fill="#94a3b8" textAnchor="end" fontWeight="600">{v}</text>
-                                </g>
-                              ))}
-                              <path d={todayAreaPath} fill="url(#todayGradient)" />
-                              <path d={todayLinePath} fill="none" stroke="#5B8DEF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                              {todayRecords.map((d, i) => (
-                                <g key={i}>
-                                  <circle cx={todayCx(i)} cy={cy(d.accuracy)} r="4" fill="#fff" stroke="#5B8DEF" strokeWidth="2.5" />
-                                  <text x={todayCx(i)} y={cy(d.accuracy) - 8} fontSize="9" fill="#5B8DEF" textAnchor="middle" fontWeight="bold">{d.accuracy}%</text>
-                                  <text x={todayCx(i)} y={SVG_H - 4} fontSize="9" fill="#94a3b8" textAnchor="middle" fontWeight="600">{to24h(d.time)}</text>
-                                </g>
-                              ))}
-                            </svg>
-                          ) : (
-                            <div className="w-full h-40 flex items-center justify-center text-slate-400 font-medium text-sm">今日尚無練習紀錄</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex justify-center gap-2 mt-4">
-                      {[0, 1].map(idx => (
-                        <button key={idx} onClick={() => setChartTab(idx)}
-                          className={`rounded-full transition-all ${chartTab === idx ? 'w-5 h-2 bg-[#8B7EE0]' : 'w-2 h-2 bg-slate-200'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
                   {/* 測驗紀錄清單 */}
                   <h3 className="font-bold text-slate-500 mb-4 flex items-center gap-2 text-sm ml-1">
                     <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -647,12 +548,12 @@ export default function HistoryRecord() {
                   {/* 只在 CPR 練習保留 AI 分析區塊 */}
                   {renderCprAiAnalysisSection()}
 
-                  {/*  圖表區塊 (與 Quiz 共用的設計) */}
+                  {/*  圖表區塊 */}
                   <div className="bg-white rounded-[2rem] p-6 mb-6 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-slate-50">
                     <div className="flex items-center justify-between mb-6">
                       <h4 className="text-slate-700 font-bold text-[15px] flex items-center gap-2">
                         <svg className="w-5 h-5 text-[#8B7EE0]" fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path></svg>
-                        每日平均趨勢
+                        準確率分析
                       </h4>
                       <div className="flex bg-white border border-slate-100 rounded-full p-1 shadow-sm">
                         {['趨勢', '今日'].map((label, idx) => (

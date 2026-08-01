@@ -112,10 +112,14 @@ export default function CPRPractice() {
     async function loadShoulderWidth() {
       try {
         const { data, error } = await supabase.auth.getUser();
-        if (!error && data?.user?.user_metadata?.shoulder_width_cm) {
-          const val = Number(data.user.user_metadata.shoulder_width_cm);
-          setShoulderWidthCm(val);
-          shoulderWidthCmRef.current = val;
+        if (!error && data?.user) {
+          const savedWidth = Number(data.user.user_metadata?.shoulder_width_cm);
+          if (Number.isFinite(savedWidth) && savedWidth > 0) {
+            setShoulderWidthCm(savedWidth);
+            shoulderWidthCmRef.current = savedWidth;
+            return;
+          }
+          setShowShoulderWarning(true);
           return;
         }
       } catch (err) {
@@ -676,10 +680,10 @@ export default function CPRPractice() {
       </div>  
 
         {showShoulderWarning && (
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 w-[90%] max-w-sm bg-amber-500/95 backdrop-blur-md rounded-2xl px-4 py-3 shadow-xl flex items-center justify-between gap-3">
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 w-[90%] max-w-sm bg-amber-500/95 backdrop-blur-md rounded-2xl px-4 py-3 shadow-xl flex flex-col items-center justify-center gap-2 text-center">
             <span className="text-white text-xs font-bold leading-snug">尚未設定肩寬，深度偵測無法使用</span>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/', { state: { openProfile: true } })}
               className="shrink-0 bg-white text-amber-600 text-xs font-black px-3 py-1.5 rounded-full"
             >
               前往設定
