@@ -21,6 +21,7 @@ export default function CPRPractice() {
   const [warningMsg, setWarningMsg] = useState("系統初始化中...");
 
   const [isTraining, setIsTraining] = useState(false);
+  const [isPracticeActive, setIsPracticeActive] = useState(false); // 是否已偵測到第一下按壓，開始正式計時
   const [timeLeft, setTimeLeft] = useState(120);
   const [facingMode, setFacingMode] = useState("environment");
   const [shoulderWidthCm, setShoulderWidthCm] = useState(null);
@@ -43,7 +44,8 @@ export default function CPRPractice() {
   const lowestWristYRef = useRef(0.0);
   const lockedShoulderWidthPxRef = useRef(0);
   const bentFrameCountRef = useRef(0);
-  const deepestPostureRef = useRef({ isArmBent: false, isNotVertical: false, isOffset: false });
+  const notVerticalFrameCountRef = useRef(0);
+  const offsetFrameCountRef = useRef(0);
   const threshold = 0.015;
 
   const lastWarningTimeRef = useRef(0);
@@ -81,23 +83,6 @@ export default function CPRPractice() {
     voiceRef.current?.setEnabled(next);   // 關掉時會立刻停止並還原音量
   };
 
-  // 新增：語音播報時壓低節拍器、講完還原
-  const duckMetronome = () => {
-    const ctx = audioCtxRef.current;
-    const gain = metronomeGainRef.current;
-    if (!ctx || !gain) return;
-    const t = ctx.currentTime;
-    gain.gain.cancelScheduledValues(t);
-    gain.gain.setTargetAtTime(0.12, t, 0.04);   // 平滑壓到 12%
-  };
-  const unduckMetronome = () => {
-    const ctx = audioCtxRef.current;
-    const gain = metronomeGainRef.current;
-    if (!ctx || !gain) return;
-    const t = ctx.currentTime;
-    gain.gain.cancelScheduledValues(t);
-    gain.gain.setTargetAtTime(1.0, t, 0.08);     // 平滑拉回
-  };
 
   useEffect(() => {
     return () => {
@@ -162,13 +147,13 @@ export default function CPRPractice() {
 
   useEffect(() => {
     let timer;
-    if (isTraining && timeLeft > 0) {
+    if (isPracticeActive && timeLeft > 0) {
       timer = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
-    } else if (timeLeft === 0 && isTraining) {
+    } else if (timeLeft === 0 && isPracticeActive) {
       handleStopTraining();
     }
     return () => clearInterval(timer);
-  }, [isTraining, timeLeft]);
+  }, [isPracticeActive, timeLeft]);
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -186,10 +171,12 @@ export default function CPRPractice() {
 
     setIsTraining(true);
     isTrainingRef.current = true;
+    setIsPracticeActive(false);
     pressCountRef.current = 0;
     bpmRef.current = 0;
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 };
-    startTimeRef.current = Date.now();
+    startTimeRef.current = 0; // 0 代表尚未偵測到第一下按壓，計時起點延後到第一下按壓才鎖定
+    lastPressTimeRef.current = 0;
     setBpm(0);
     setTimeLeft(120);
     setWarningMsg("請開始按壓");
@@ -198,9 +185,10 @@ export default function CPRPractice() {
     lowestYRef.current = 0.0;
     highestWristYRef.current = 1.0;
     lowestWristYRef.current = 0.0;
-    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
     lockedShoulderWidthPxRef.current = 0;
     bentFrameCountRef.current = 0;
+    notVerticalFrameCountRef.current = 0;
+    offsetFrameCountRef.current = 0;
     
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
@@ -223,7 +211,7 @@ export default function CPRPractice() {
     }
     // 新增：初始化語音教練（在按下開始按鈕時，符合 iOS 需使用者手勢的限制）
     if (!voiceRef.current) {
-      voiceRef.current = new VoiceCoach({ onDuck: duckMetronome, onUnduck: unduckMetronome });
+      voiceRef.current = new VoiceCoach();
     }
     voiceRef.current.setEnabled(voiceOnRef.current);
     
@@ -241,6 +229,7 @@ export default function CPRPractice() {
 
     setIsTraining(false);
     isTrainingRef.current = false;
+    setIsPracticeActive(false);
     voiceRef.current?.stop();   // 新增：停止語音並還原音量
     setIsAnalyzing(true); // 開啟分析載入畫面
 
@@ -255,8 +244,17 @@ export default function CPRPractice() {
     const dateStr = `${now.getFullYear()}/${(now.getMonth()+1).toString().padStart(2, '0')}/${now.getDate().toString().padStart(2, '0')}`;
     const timeStr = `${now.getHours() >= 12 ? '下午' : '上午'} ${now.getHours() % 12 || 12}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    let accuracy = 0;
     const totalPresses = pressCountRef.current;
+    // 用「第一下到最後一下按壓」之間的實際經過時間算 bpm，排除按壓前走過去、按壓後才手動結束之間的空檔
+    // 至少要 2 下按壓才有意義的時間區間，避免第一下跟最後一下是同一下時 elapsedTime 趨近 0 算出離譜的 bpm
+    if (totalPresses > 1 && startTimeRef.current > 0 && lastPressTimeRef.current > 0) {
+      const elapsedTime = (lastPressTimeRef.current - startTimeRef.current) / 1000;
+      if (elapsedTime > 0) {
+        bpmRef.current = Math.floor((totalPresses / elapsedTime) * 60);
+      }
+    }
+
+    let accuracy = 0;
     const finalBpm = bpmRef.current;
     if (totalPresses > 0 && finalBpm > 0) {
       let bpmScore = 100;
@@ -268,12 +266,8 @@ export default function CPRPractice() {
       const postureScore = Math.max(0, 100 - ((errorsLogRef.current.armBent + errorsLogRef.current.notVertical) / totalPresses) * 100);
       const positionScore = Math.max(0, 100 - (errorsLogRef.current.positionOffset / totalPresses) * 100);
 
-      accuracy = Math.round(
-        (bpmScore    * 0.40) +
-        (depthScore  * 0.40) +
-        (postureScore * 0.15) +
-        (positionScore * 0.05)
-      );
+      // 整體準確率取四項分數中最差的一項
+      accuracy = Math.round(Math.min(bpmScore, depthScore, postureScore, positionScore));
     }
 
     // ✅ 步驟 1：在此直接分析建議 (不扣不必要的 Token)
@@ -449,7 +443,7 @@ export default function CPRPractice() {
 
              if (!isInTargetBox) {
                 if (now - lastWarningTimeRef.current > 500) {
-                  setWarningMsg("請對準虛線框");
+                  setWarningMsg("請對齊虛線框");
                   lastWarningTimeRef.current = now;
                 }
               } else {
@@ -485,15 +479,16 @@ export default function CPRPractice() {
                     positionStateRef.current = "down";
                     lowestYRef.current = currentShoulderY;
                     lowestWristYRef.current = currentWristY;
-                    deepestPostureRef.current = { isArmBent: false, isNotVertical: false, isOffset: false };
                     bentFrameCountRef.current = 0;
+                    notVerticalFrameCountRef.current = 0;
+                    offsetFrameCountRef.current = 0;
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
                   if (isArmBent) bentFrameCountRef.current += 1;
-                  if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
-                  if (isOffset) deepestPostureRef.current.isOffset = true;
+                  if (isNotVertical) notVerticalFrameCountRef.current += 1;
+                  if (isOffset) offsetFrameCountRef.current += 1;
                   if (currentShoulderY < lowestYRef.current - threshold) {
 
                     const pressDepthPx = (lowestWristYRef.current - highestWristYRef.current) * h;
@@ -501,10 +496,16 @@ export default function CPRPractice() {
                     highestYRef.current = currentShoulderY;
                     highestWristYRef.current = currentWristY;
 
+                    if (startTimeRef.current === 0) {
+                      startTimeRef.current = Date.now();
+                      setIsPracticeActive(true);
+                    }
+                    lastPressTimeRef.current = Date.now();
                     pressCountRef.current += 1;
 
                     const bentAtBottom = bentFrameCountRef.current >= 3;
-                    const { isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
+                    const notVerticalAtBottom = notVerticalFrameCountRef.current >= 3;
+                    const offsetAtBottom = offsetFrameCountRef.current >= 3;
 
                     let depthIssue = null;
 

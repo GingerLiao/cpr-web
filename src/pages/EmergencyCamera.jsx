@@ -35,8 +35,9 @@ export default function EmergencyCamera() {
   const highestWristYRef = useRef(1.0);
   const lowestWristYRef = useRef(0.0);
   const lockedShoulderWidthPxRef = useRef(0);
-  const deepestPostureRef = useRef({ isNotVertical: false, isOffset: false });
   const bentFrameCountRef = useRef(0);
+  const notVerticalFrameCountRef = useRef(0);
+  const offsetFrameCountRef = useRef(0);
   const threshold = 0.015;
 
   const lastWarningTimeRef = useRef(0); 
@@ -68,23 +69,6 @@ export default function EmergencyCamera() {
     voiceRef.current?.setEnabled(next);   // 關掉時會立刻停止並還原音量
   };
 
-  // 新增：語音播報時壓低節拍器、講完還原
-  const duckMetronome = () => {
-    const ctx = audioCtxRef.current;
-    const gain = metronomeGainRef.current;
-    if (!ctx || !gain) return;
-    const t = ctx.currentTime;
-    gain.gain.cancelScheduledValues(t);
-    gain.gain.setTargetAtTime(0.12, t, 0.04);   // 平滑壓到 12%
-  };
-  const unduckMetronome = () => {
-    const ctx = audioCtxRef.current;
-    const gain = metronomeGainRef.current;
-    if (!ctx || !gain) return;
-    const t = ctx.currentTime;
-    gain.gain.cancelScheduledValues(t);
-    gain.gain.setTargetAtTime(1.0, t, 0.08);     // 平滑拉回
-  };
 
   useEffect(() => {
     return () => {
@@ -158,8 +142,9 @@ export default function EmergencyCamera() {
     lowestYRef.current = 0.0;
     highestWristYRef.current = 1.0;
     lowestWristYRef.current = 0.0;
-    deepestPostureRef.current = { isNotVertical: false, isOffset: false };
     bentFrameCountRef.current = 0;
+    notVerticalFrameCountRef.current = 0;
+    offsetFrameCountRef.current = 0;
     lockedShoulderWidthPxRef.current = 0;
 
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -182,7 +167,7 @@ export default function EmergencyCamera() {
     }
     // 新增：初始化語音教練（在按下開始按鈕時，符合 iOS 需使用者手勢的限制）
     if (!voiceRef.current) {
-      voiceRef.current = new VoiceCoach({ onDuck: duckMetronome, onUnduck: unduckMetronome });
+      voiceRef.current = new VoiceCoach();
     }
     voiceRef.current.setEnabled(voiceOnRef.current);
     const buffer = ctx.createBuffer(1, 1, 22050);
@@ -333,15 +318,16 @@ export default function EmergencyCamera() {
                     positionStateRef.current = "down";
                     lowestYRef.current = currentShoulderY;
                     lowestWristYRef.current = currentWristY;
-                    deepestPostureRef.current = { isNotVertical: false, isOffset: false };
                     bentFrameCountRef.current = 0;
+                    notVerticalFrameCountRef.current = 0;
+                    offsetFrameCountRef.current = 0;
                   }
                 } else if (positionStateRef.current === "down") {
                   if (currentShoulderY > lowestYRef.current) lowestYRef.current = currentShoulderY;
                   if (currentWristY > lowestWristYRef.current) lowestWristYRef.current = currentWristY;
                   if (isArmBent) bentFrameCountRef.current += 1;
-                  if (isNotVertical) deepestPostureRef.current.isNotVertical = true;
-                  if (isOffset) deepestPostureRef.current.isOffset = true;
+                  if (isNotVertical) notVerticalFrameCountRef.current += 1;
+                  if (isOffset) offsetFrameCountRef.current += 1;
                   if (currentShoulderY < lowestYRef.current - threshold) {
                     const pressDepthPx = (lowestWristYRef.current - highestWristYRef.current) * h;
                     positionStateRef.current = "up";
@@ -349,7 +335,8 @@ export default function EmergencyCamera() {
                     highestWristYRef.current = currentWristY;
 
                     const bentAtBottom = bentFrameCountRef.current >= 3;
-                    const { isNotVertical: notVerticalAtBottom, isOffset: offsetAtBottom } = deepestPostureRef.current;
+                    const notVerticalAtBottom = notVerticalFrameCountRef.current >= 3;
+                    const offsetAtBottom = offsetFrameCountRef.current >= 3;
 
                     let depthIssue = null;
                     if (shoulderWidthCmRef.current) {
