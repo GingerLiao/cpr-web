@@ -1,10 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
+/**
+ * 把 Nominatim 的結構化欄位組成台灣慣用的地址（由大到小）。
+ * 直接用它的 display_name 不行：那是「門牌→路→里→區→縣市→國家」的相反順序，
+ * 而且開頭常是最近的店家名稱，唸給接線人員聽會誤導。
+ *
+ * 欄位對應（實測）：直轄市→city+suburb(區)、縣→county+town(鄉鎮市)。
+ * village/neighbourhood/city_district 多半是「里」，台灣地址慣例不寫，故排除。
+ */
+function formatTaiwanAddress(a) {
+  if (!a) return null;
+  const cityLevel = a.city || a.county || a.state || '';
+  const districtLevel = a.suburb || a.town || a.city_district || '';
+  const road = a.road || '';
+  let houseNo = a.house_number || '';
+  // 有些地區回傳的 house_number 本身就含「號」（例如屏東恆春的 "18號"），避免變成「18號號」
+  if (houseNo && !/號$/.test(houseNo)) houseNo += '號';
+  return `${cityLevel}${districtLevel}${road}${houseNo}` || null;
+}
+
 export default function EmergencyCPR() {
   const navigate = useNavigate();
   const location = useLocation();
   const [step, setStep] = useState(location.state?.step || 0);
+
+  // 目前位置：撥打 119 時要能唸給接線人員聽
+  const [coords, setCoords] = useState(null);
+  const [address, setAddress] = useState(null);
+  // locating | ok | denied | error（瀏覽器不支援時直接以 error 起始，避免在 effect 內同步 setState）
+  const [locStatus, setLocStatus] = useState(
+    () => ('geolocation' in navigator ? 'locating' : 'error')
+  );
+
+  // 一進頁面就開始定位，不等使用者翻到第 2 步，爭取時間
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setCoords({ lat, lng });
+        setLocStatus('ok');
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=zh-TW`
+          );
+          const data = await res.json();
+          // 組不出結構化地址時退回原始字串，總比沒有好
+          setAddress(formatTaiwanAddress(data?.address) || data?.display_name || null);
+        } catch (err) {
+          // 查不到地址不影響流程，畫面仍會顯示經緯度
+          console.error('地址查詢失敗:', err);
+        }
+      },
+      (err) => {
+        console.error('定位失敗:', err);
+        setLocStatus(err.code === err.PERMISSION_DENIED ? 'denied' : 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, []);
 
   // 更新標題樣式：當前步驟紅字放大 (text-3xl)，其餘維持原本大小 (text-2xl)
   const stepData = [
@@ -46,8 +102,43 @@ export default function EmergencyCPR() {
           <div className="space-y-4">
             {step === 1 && (
               <div className="flex flex-col gap-4">
+                {/* 目前位置：撥打 119 時唸給接線人員 */}
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg className="w-4 h-4 text-[#E35E68] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span className="text-xs font-bold text-slate-500 tracking-wider">您目前的位置</span>
+                  </div>
+
+                  {locStatus === 'locating' && (
+                    <div className="text-sm text-slate-400 font-medium">定位中...</div>
+                  )}
+
+                  {(locStatus === 'denied' || locStatus === 'error') && (
+                    <div className="text-sm text-amber-600 font-medium leading-snug">
+                      {locStatus === 'denied' ? '未取得定位權限' : '無法取得定位'}，
+                      請留意周遭門牌或明顯地標，向接線人員描述位置
+                    </div>
+                  )}
+
+                  {locStatus === 'ok' && (
+                    <>
+                      <div className="text-lg font-bold text-slate-800 leading-relaxed">
+                        {address || '地址查詢中...'}
+                      </div>
+                      {coords && (
+                        <div className="text-xs text-slate-500 font-mono mt-2 pt-2 border-t border-slate-100">
+                          {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 {/* 撥打 119 - 粉底紅字柔和風格 */}
-                <button 
+                <button
                   onClick={handleEmergencyCall} 
                   className="bg-[#FFF0F2] text-[#E35E68] active:bg-[#FFE4E8] rounded-2xl py-4 font-bold flex items-center justify-center w-full transition-colors border border-rose-100 shadow-sm"
                 >

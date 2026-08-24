@@ -6,10 +6,7 @@ import Mascot from '../components/Mascot';
 export default function Home({ session, isGuest }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [showProfileModal, setShowProfileModal] = useState(false); 
-  const [shoulderWidth, setShoulderWidth] = useState("");
-  const [saveStatus, setSaveStatus] = useState("");
-  const [isSavingForearm, setIsSavingForearm] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const handleLogout = async () => {
     const ok = window.confirm('確定要登出嗎？');
@@ -25,57 +22,7 @@ export default function Home({ session, isGuest }) {
     }
   }, [location.state]);
 
-  useEffect(() => {
-    async function loadShoulderWidth() {
-      if (isGuest) {
-        const saved = localStorage.getItem('guest_shoulder_width_cm');
-        if (saved) setShoulderWidth(saved);
-        return;
-      }
-      if (!session?.user) return;
-      try {
-        const { data, error } = await supabase.auth.getUser();
-        if (!error && data?.user?.user_metadata?.shoulder_width_cm) {
-          setShoulderWidth(data.user.user_metadata.shoulder_width_cm);
-        }
-      } catch (err) {
-        console.error('載入肩膀寬度失敗:', err);
-      }
-    }
-    loadShoulderWidth();
-  }, [session, isGuest]);
-
-  const handleSaveForearmLength = async (e) => {
-    e.preventDefault();
-    const value = parseFloat(shoulderWidth);
-    if (Number.isNaN(value) || value <= 0) {
-      setSaveStatus('請輸入有效的肩膀寬度（公分）');
-      return;
-    }
-
-    setIsSavingForearm(true);
-    try {
-      if (isGuest) {
-        localStorage.setItem('guest_shoulder_width_cm', value.toString());
-      } else {
-        const { data, error } = await supabase.auth.updateUser({
-          data: { shoulder_width_cm: value }
-        });
-        if (error) throw error;
-      }
-      setSaveStatus(isGuest ? '肩膀寬度已暫存於本機瀏覽器' : '肩膀寬度已儲存');
-      setShoulderWidth(value);
-    } catch (err) {
-      console.error('儲存肩膀寬度失敗:', err);
-      setSaveStatus('儲存失敗，請稍後再試。');
-    } finally {
-      setIsSavingForearm(false);
-    }
-  };
-
   const userEmail = session?.user?.email || "";
-  const hasShoulderWidth = Number.isFinite(Number(shoulderWidth)) && Number(shoulderWidth) > 0;
-  const showShoulderHint = !hasShoulderWidth;
 
   return (
     // 1. 最外層：滿版、灰色背景、並且 flex 置中
@@ -87,23 +34,19 @@ export default function Home({ session, isGuest }) {
         {/* 背景波浪 */}
         <WaveBg />
 
-        {/* 頂部 Header */}
-        <header className="relative z-10 flex items-center justify-between px-6 pt-10 pb-12">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10">
-              <HeaderLogo />
+        {/* 頂部 Header：內層寬度與下方選單格線一致（max-w-[340px] 置中），
+            讓 logo 對齊左欄、設定按鈕對齊右欄（CPR 練習／歷史紀錄） */}
+        <header className="relative z-10 px-6 pt-10 pb-12">
+          <div className="w-full max-w-[340px] mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10">
+                <HeaderLogo />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[15px] font-black text-slate-800 leading-tight">CPR Smart Assist</span>
+                <span className="text-[11px] font-medium text-slate-400">智慧化 CPR 輔助系統</span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-[15px] font-black text-slate-800 leading-tight">CPR Smart Assist</span>
-              <span className="text-[11px] font-medium text-slate-400">智慧化 CPR 輔助系統</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <button className="text-slate-400 hover:text-slate-600 transition-colors">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 18 24" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-            </button>
             <div className="relative flex items-center">
               <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-2 bg-white shadow-sm border border-slate-100 rounded-full pl-1.5 pr-3 py-1.5 active:scale-95 transition-transform">
                 <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-[#FCE3EC]">
@@ -111,11 +54,6 @@ export default function Home({ session, isGuest }) {
                 </div>
                 <span className="text-[12px] font-bold text-slate-600">設定<span className="ml-1 text-slate-400">▼</span></span>
               </button>
-              {showShoulderHint && (
-                <div className="absolute top-full right-0 mt-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 shadow-sm whitespace-nowrap">
-                  首次使用請先輸入肩寬長度
-                </div>
-              )}
             </div>
           </div>
         </header>
@@ -239,26 +177,6 @@ export default function Home({ session, isGuest }) {
                     您目前以 <strong className="font-bold">訪客身分</strong> 瀏覽。<br />
                     <span className="text-xs mt-1 block text-amber-600">⚠️ 練習紀錄與題庫成績將不會儲存至雲端</span>
                   </div>
-                  <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
-                    <label className="block text-sm font-bold text-slate-700">
-                      肩膀寬度 (公分)
-                      <input
-                        type="number"
-                        min="20"
-                        max="60"
-                        step="0.1"
-                        value={shoulderWidth}
-                        onChange={(e) => setShoulderWidth(e.target.value)}
-                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#5B8DEF]/50"
-                        placeholder="例如 40"
-                      />
-                    </label>
-                    <p className="text-xs text-slate-500">訪客輸入僅暫存於本機瀏覽器，不會儲存至雲端。</p>
-                    {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
-                    <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full py-3 bg-[#5B8DEF] text-white rounded-2xl font-bold">
-                      {isSavingForearm ? '儲存中...' : '暫存肩膀寬度'}
-                    </button>
-                  </form>
                   <button onClick={() => { localStorage.removeItem('isGuest'); window.location.href = "/login"; }} className="cpr-btn-secondary w-full py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold">
                     前往登入 / 註冊
                   </button>
@@ -274,26 +192,6 @@ export default function Home({ session, isGuest }) {
                       <span className="text-[11px] text-[#5B8DEF] font-bold bg-[#5B8DEF]/10 px-2.5 py-1 rounded-full">已登入正式會員</span>
                     </div>
                   </div>
-                  <form onSubmit={handleSaveForearmLength} className="space-y-3 mb-4 text-left">
-                    <label className="block text-sm font-bold text-slate-700">
-                      肩膀寬度 (公分)
-                      <input
-                        type="number"
-                        min="20"
-                        max="60"
-                        step="0.1"
-                        value={shoulderWidth}
-                        onChange={(e) => setShoulderWidth(e.target.value)}
-                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:ring-2 focus:ring-[#5B8DEF]/50"
-                        placeholder="例如 40"
-                      />
-                    </label>
-                    <p className="text-xs text-slate-500">此數值將用於 CPR 深度偵測校正。</p>
-                    {saveStatus && <div className="text-sm text-slate-600">{saveStatus}</div>}
-                    <button type="submit" disabled={isSavingForearm} className="cpr-btn-primary w-full py-3 bg-[#5B8DEF] text-white rounded-2xl font-bold">
-                      {isSavingForearm ? '儲存中...' : '儲存肩膀寬度'}
-                    </button>
-                  </form>
                   <button onClick={handleLogout} className="cpr-btn-danger w-full py-3 bg-rose-50 text-rose-600 rounded-2xl font-bold">登出系統</button>
                 </div>
               )}

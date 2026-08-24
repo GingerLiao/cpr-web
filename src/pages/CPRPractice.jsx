@@ -24,10 +24,8 @@ export default function CPRPractice() {
   const [isPracticeActive, setIsPracticeActive] = useState(false); // 是否已偵測到第一下按壓，開始正式計時
   const [timeLeft, setTimeLeft] = useState(120);
   const [facingMode, setFacingMode] = useState("environment");
-  const [shoulderWidthCm, setShoulderWidthCm] = useState(null);
   const shoulderWidthCmRef = useRef(null);
-  const [showShoulderWarning, setShowShoulderWarning] = useState(false);
-  
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const [voiceOn, setVoiceOn] = useState(true);
@@ -52,6 +50,16 @@ export default function CPRPractice() {
   const lastPressTimeRef = useRef(0);
   const bpmRef = useRef(0);
   const errorsLogRef = useRef({ armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 });
+
+  // 站姿校正：偵測使用者站直面對鏡頭，自動用 worldLandmarks 量肩寬
+  const calibrationDoneRef = useRef(false);
+  const standStraightStartRef = useRef(0);
+  const calibrationSamplesRef = useRef([]);
+
+  // 比例尺校正：用「按壓最高點」當下的肩寬像素，取前 5 次的中位數後鎖定
+  const peakShoulderWidthPxRef = useRef(0);   // 目前這輪 up 階段最高點當下的肩寬像素
+  const peakPxSamplesRef = useRef([]);
+  const PEAK_PX_SAMPLE_COUNT = 5;
 
   const switchCamera = async () => {
     const newMode = facingMode === "environment" ? "user" : "environment";
@@ -91,34 +99,6 @@ export default function CPRPractice() {
         audioCtxRef.current.close().catch(err => console.log(err));
       }
     };
-  }, []);
-
-  useEffect(() => {
-    async function loadShoulderWidth() {
-      try {
-        const { data, error } = await supabase.auth.getUser();
-        if (!error && data?.user) {
-          const savedWidth = Number(data.user.user_metadata?.shoulder_width_cm);
-          if (Number.isFinite(savedWidth) && savedWidth > 0) {
-            setShoulderWidthCm(savedWidth);
-            shoulderWidthCmRef.current = savedWidth;
-            return;
-          }
-          setShowShoulderWarning(true);
-          return;
-        }
-      } catch (err) {
-        console.error('載入肩膀寬度失敗:', err);
-      }
-      const guest = Number(localStorage.getItem('guest_shoulder_width_cm'));
-      if (guest > 0) {
-        setShoulderWidthCm(guest);
-        shoulderWidthCmRef.current = guest;
-      } else {
-        setShowShoulderWarning(true);
-      }
-    }
-    loadShoulderWidth();
   }, []);
 
   useEffect(() => {
@@ -177,9 +157,14 @@ export default function CPRPractice() {
     errorsLogRef.current = { armBent: 0, notVertical: 0, positionOffset: 0, depthTooShallow: 0, depthTooDeep: 0 };
     startTimeRef.current = 0; // 0 代表尚未偵測到第一下按壓，計時起點延後到第一下按壓才鎖定
     lastPressTimeRef.current = 0;
+    calibrationDoneRef.current = false;
+    standStraightStartRef.current = 0;
+    calibrationSamplesRef.current = [];
+    peakShoulderWidthPxRef.current = 0;
+    peakPxSamplesRef.current = [];
     setBpm(0);
     setTimeLeft(120);
-    setWarningMsg("請開始按壓");
+    setWarningMsg("請直立面對鏡頭進行校正");
     positionStateRef.current = "up";
     highestYRef.current = 1.0;
     lowestYRef.current = 0.0;
@@ -401,6 +386,19 @@ export default function CPRPractice() {
           let startTimeMs = performance.now();
           const results = poseLandmarkerRef.current.detectForVideo(videoElement, startTimeMs);
 
+          // 這一幀用 worldLandmarks 算出的肩寬（公分），供站姿校正取樣用
+          let worldShoulderWidthCm = null;
+          if (results.worldLandmarks && results.worldLandmarks.length > 0) {
+            const worldLm = results.worldLandmarks[0];
+            const wls = worldLm[11], wrs = worldLm[12];
+            if (wls && wrs) {
+              const dx = wls.x - wrs.x;
+              const dy = wls.y - wrs.y;
+              const dz = wls.z - wrs.z;
+              worldShoulderWidthCm = Math.sqrt(dx * dx + dy * dy + dz * dz) * 100;
+            }
+          }
+
           canvasElement.width = videoElement.videoWidth;
           canvasElement.height = videoElement.videoHeight;
           const w = canvasElement.width;
@@ -441,7 +439,47 @@ export default function CPRPractice() {
               const isInTargetBox = midShoulder.x >= 0.3 && midShoulder.x <= 0.7 && midShoulder.y >= 0.2 && midShoulder.y <= 0.75;
               const now= Date.now();
 
-             if (!isInTargetBox) {
+              if (!calibrationDoneRef.current) {
+                // 站姿校正：偵測使用者站直面對鏡頭，用 worldLandmarks 自動量出肩寬，取代手動輸入
+                const hip23 = landmarks[23], hip24 = landmarks[24];
+                const hipsVisible = hip23 && hip24 && (hip23.visibility || 1) > 0.5 && (hip24.visibility || 1) > 0.5;
+                let angleFromVertical = 999;
+                if (hipsVisible) {
+                  const midHip = { x: (hip23.x + hip24.x) / 2, y: (hip23.y + hip24.y) / 2 };
+                  const dx = (midShoulder.x - midHip.x) * w;
+                  const dy = (midShoulder.y - midHip.y) * h;
+                  angleFromVertical = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);
+                }
+                const isStandingStraight = hipsVisible && angleFromVertical < 15;
+
+                if (isStandingStraight) {
+                  if (standStraightStartRef.current === 0) {
+                    standStraightStartRef.current = now;
+                    calibrationSamplesRef.current = [];
+                  }
+                  if (worldShoulderWidthCm) {
+                    calibrationSamplesRef.current.push(worldShoulderWidthCm);
+                  }
+                  if (now - lastWarningTimeRef.current > 500) {
+                    setWarningMsg("請保持直立，正在校正肩寬...");
+                    lastWarningTimeRef.current = now;
+                  }
+                  if (now - standStraightStartRef.current > 800 && calibrationSamplesRef.current.length > 0) {
+                    const avgCm = calibrationSamplesRef.current.reduce((a, b) => a + b, 0) / calibrationSamplesRef.current.length;
+                    shoulderWidthCmRef.current = Math.round(avgCm * 10) / 10;
+                    calibrationDoneRef.current = true;
+                    setWarningMsg("校正完成");
+                    voiceRef.current?.update(['校正完成']);
+                  }
+                } else {
+                  standStraightStartRef.current = 0;
+                  calibrationSamplesRef.current = [];
+                  if (now - lastWarningTimeRef.current > 500) {
+                    setWarningMsg("請直立面對鏡頭進行校正");
+                    lastWarningTimeRef.current = now;
+                  }
+                }
+              } else if (!isInTargetBox) {
                 if (now - lastWarningTimeRef.current > 500) {
                   setWarningMsg("請對齊虛線框");
                   lastWarningTimeRef.current = now;
@@ -470,9 +508,8 @@ export default function CPRPractice() {
                 if (positionStateRef.current === "up") {
                   if (currentShoulderY < highestYRef.current) {
                     highestYRef.current = currentShoulderY;
-                    if (lockedShoulderWidthPxRef.current === 0) {
-                      lockedShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
-                    }
+                    // 記錄這輪最高點當下的肩寬像素：此時的身體前傾角度跟按壓時一致，比例尺才對得上
+                    peakShoulderWidthPxRef.current = Math.abs(ls.x - rs.x) * w;
                   }
                   if (currentWristY < highestWristYRef.current) highestWristYRef.current = currentWristY;
                   if (currentShoulderY > highestYRef.current + threshold) {
@@ -507,8 +544,16 @@ export default function CPRPractice() {
                     const notVerticalAtBottom = notVerticalFrameCountRef.current >= 3;
                     const offsetAtBottom = offsetFrameCountRef.current >= 3;
 
-                    let depthIssue = null;
+                    // 比例尺校正：收集這次按壓最高點的肩寬像素，滿 5 次後取中位數鎖定（中位數可濾掉單幀的關鍵點抖動）
+                    if (lockedShoulderWidthPxRef.current === 0 && peakShoulderWidthPxRef.current > 0) {
+                      peakPxSamplesRef.current.push(peakShoulderWidthPxRef.current);
+                      if (peakPxSamplesRef.current.length >= PEAK_PX_SAMPLE_COUNT) {
+                        const sorted = [...peakPxSamplesRef.current].sort((a, b) => a - b);
+                        lockedShoulderWidthPxRef.current = sorted[Math.floor(sorted.length / 2)];
+                      }
+                    }
 
+                    let depthIssue = null;
                     if (shoulderWidthCmRef.current) {
                       const shoulderWidthPx = lockedShoulderWidthPxRef.current;
 
@@ -678,23 +723,11 @@ export default function CPRPractice() {
                 </svg>
           </button>
         </div>
-      </div>  
-
-        {showShoulderWarning && (
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 w-[90%] max-w-sm bg-amber-500/95 backdrop-blur-md rounded-2xl px-4 py-3 shadow-xl flex flex-col items-center justify-center gap-2 text-center">
-            <span className="text-white text-xs font-bold leading-snug">尚未設定肩寬，深度偵測無法使用</span>
-            <button
-              onClick={() => navigate('/', { state: { openProfile: true } })}
-              className="shrink-0 bg-white text-amber-600 text-xs font-black px-3 py-1.5 rounded-full"
-            >
-              前往設定
-            </button>
-          </div>
-        )}
+      </div>
 
         <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-[90%] max-w-sm flex flex-col gap-3 items-center">
           <div className={`px-8 py-2 rounded-full flex items-center justify-center gap-3 text-xl font-black shadow-lg text-white backdrop-blur-md transition-colors 
-            ${!isTraining ? 'bg-gray-800/80' : warningMsg.includes("完美") ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
+            ${!isTraining ? 'bg-gray-800/80' : (warningMsg.includes("完美") || warningMsg.includes("完成")) ? 'bg-green-500/80' : 'bg-red-500/80'}`}>
             <div className={`w-3 h-3 rounded-full ${isTraining ? 'bg-white animate-pulse' : 'bg-gray-400'}`}></div>
             <span className="tracking-wider">{warningMsg}</span>
           </div>

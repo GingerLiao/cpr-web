@@ -5,6 +5,11 @@ import { supabase } from '../supabaseClient';
 import { getDistance, userIcon, aedIcon } from '../utils/helpers';
 
 
+// 搜尋半徑（公里）。取 AED 是「來回」路程：300 公尺代表要跑 600 公尺，
+// 加上找櫃子、開櫃的時間約需 5 分鐘，已經是 AHA 建議「倒地後 3-5 分鐘完成電擊」的上限。
+// 再遠的 AED 實務上來不及取回，列出來只會干擾判斷。
+const SEARCH_RADIUS_KM = 0.3;
+
 // 負責在使用者位置更新時移動地圖視角的元件
 function MapUpdater({ center }) {
   const map = useMap();
@@ -23,71 +28,86 @@ export default function AEDMap() {
   const [errorMsg, setErrorMsg] = useState("獲取 GPS 定位中...");
 
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const currentLat = position.coords.latitude;
-          const currentLng = position.coords.longitude;
-          setUserLocation({ lat: currentLat, lng: currentLng });
-          
-          setErrorMsg("搜尋附近 AED 中...");
-          
-          try {
-            const { data, error } = await supabase
-              .from('AedLocation')
-              .select('*')
-              .limit(15000); 
-            if (error) throw error;
-            
-            // ============== 邏輯區完全保留 ==============
-            const processedAeds = data
-              .map(item => {
-                const memo = item['開放使用時間備註'];
-                const wdStart = item['周一至周五起'];
-                const wdEnd = item['周一至周五迄'];
-                let timeStr = "未提供時間";
-                
-                if (memo && memo !== 'EMPTY' && memo.trim() !== '') {
-                  timeStr = memo; 
-                } else if (wdStart && wdStart !== 'EMPTY') {
-                  timeStr = `平日 ${wdStart.substring(0,5)}-${wdEnd.substring(0,5)}`;
-                }
-                const placement = item['AED放置地點'] && item['AED放置地點'] !== 'EMPTY' ? item['AED放置地點'] : '';
-                const desc = item['場所描述'] && item['場所描述'] !== 'EMPTY' ? item['場所描述'] : '';
-                let detailInfo = placement;
-                if (desc) detailInfo += (detailInfo ? ` (${desc})` : desc);
-                if (!detailInfo) detailInfo = "無詳細位置資訊";
-                
-                return {
-                  id: item['AEDID'] || item['場所ID'] || Math.random(), 
-                  name: item['場所名稱'],
-                  lat: parseFloat(item['地點LAT']), 
-                  lng: parseFloat(item['地點LNG']), 
-                  address: item['場所地址'],
-                  time: timeStr,
-                  detail: detailInfo 
-                };
-              })
-              .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
-              .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
-              .filter(aed => aed.distance < 2)
-              .sort((a, b) => a.distance - b.distance);
-            // ==========================================
-            
-            setNearbyAeds(processedAeds);
-            if (processedAeds.length === 0) setErrorMsg("半徑2公里內找不到 AED");
-            else setErrorMsg(null);
-          } catch (error) {
-            console.error("Supabase 讀取錯誤:", error);
-            setErrorMsg("無法連接資料庫");
-          }
-        },
-        (error) => { setErrorMsg("請允許 GPS 定位權限"); },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    } else {
+    if (!("geolocation" in navigator)) {
       setErrorMsg("您的瀏覽器不支援定位");
+      return;
     }
+
+    const fetchAeds = async (currentLat, currentLng) => {
+      setErrorMsg("搜尋附近 AED 中...");
+
+      try {
+        // 只向資料庫要「搜尋半徑方框內」且「實際會用到的欄位」，
+        // 而不是把全台 15000 筆、每筆所有欄位都抓回來再用前端過濾。
+        // 方框完整包住搜尋半徑的圓（角落比半徑更遠），所以不會漏掉任何應該出現的 AED。
+        const KM_PER_DEG_LAT = 111.32;
+        const latDelta = SEARCH_RADIUS_KM / KM_PER_DEG_LAT;
+        const lngDelta = SEARCH_RADIUS_KM / (KM_PER_DEG_LAT * Math.cos(currentLat * Math.PI / 180));
+
+        const { data, error } = await supabase
+          .from('AedLocation')
+          .select('AEDID, 場所ID, 場所名稱, 地點LAT, 地點LNG, 場所地址, 開放使用時間備註, 周一至周五起, 周一至周五迄, AED放置地點, 場所描述')
+          .gte('地點LAT', currentLat - latDelta)
+          .lte('地點LAT', currentLat + latDelta)
+          .gte('地點LNG', currentLng - lngDelta)
+          .lte('地點LNG', currentLng + lngDelta);
+        if (error) throw error;
+        
+        // ============== 邏輯區完全保留 ==============
+        const processedAeds = data
+          .map(item => {
+            const memo = item['開放使用時間備註'];
+            const wdStart = item['周一至周五起'];
+            const wdEnd = item['周一至周五迄'];
+            let timeStr = "未提供時間";
+            
+            if (memo && memo !== 'EMPTY' && memo.trim() !== '') {
+              timeStr = memo; 
+            } else if (wdStart && wdStart !== 'EMPTY') {
+              timeStr = `平日 ${wdStart.substring(0,5)}-${wdEnd.substring(0,5)}`;
+            }
+            const placement = item['AED放置地點'] && item['AED放置地點'] !== 'EMPTY' ? item['AED放置地點'] : '';
+            const desc = item['場所描述'] && item['場所描述'] !== 'EMPTY' ? item['場所描述'] : '';
+            let detailInfo = placement;
+            if (desc) detailInfo += (detailInfo ? ` (${desc})` : desc);
+            if (!detailInfo) detailInfo = "無詳細位置資訊";
+            
+            return {
+              id: item['AEDID'] || item['場所ID'] || Math.random(), 
+              name: item['場所名稱'],
+              lat: parseFloat(item['地點LAT']), 
+              lng: parseFloat(item['地點LNG']), 
+              address: item['場所地址'],
+              time: timeStr,
+              detail: detailInfo 
+            };
+          })
+          .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
+          .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
+          .filter(aed => aed.distance < SEARCH_RADIUS_KM)
+          .sort((a, b) => a.distance - b.distance);
+        // ==========================================
+        
+        setNearbyAeds(processedAeds);
+        if (processedAeds.length === 0) setErrorMsg(`半徑 ${SEARCH_RADIUS_KM * 1000} 公尺內找不到 AED`);
+        else setErrorMsg(null);
+      } catch (error) {
+        console.error("Supabase 讀取錯誤:", error);
+        setErrorMsg("無法連接資料庫");
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const currentLat = position.coords.latitude;
+        const currentLng = position.coords.longitude;
+        setUserLocation({ lat: currentLat, lng: currentLng });
+        fetchAeds(currentLat, currentLng);
+      },
+      (error) => { setErrorMsg("請允許 GPS 定位權限"); },
+      // maximumAge：允許沿用 30 秒內的定位結果，多數情況可省下等待衛星定位的數秒
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
   }, []);
 
   const handleBack = () => {
