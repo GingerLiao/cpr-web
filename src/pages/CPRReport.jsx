@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'; 
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../supabaseClient'; 
+import { supabase } from '../supabaseClient';
+import Mascot from '../components/Mascot';
 
 export default function CPRReport() {
   const navigate = useNavigate();
@@ -130,7 +131,7 @@ export default function CPRReport() {
           {/* 右上角愛心角色 */}
           <div className="absolute right-1 top-25 w-36 h-20 pointer-events-none z-30">
             <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-18 h-2.5 bg-slate-300/60 rounded-[100%] blur-[2px]"></div>
-            <img src="/mascot/history.png" alt="Mascot" className="w-full h-full object-contain relative z-10" />
+            <Mascot variant="history" className="w-full h-full object-contain relative z-10" />
             <span className="absolute -top-1 right-4 text-purple-300 text-xl font-black opacity-70">✦</span>
           </div>
         </header>

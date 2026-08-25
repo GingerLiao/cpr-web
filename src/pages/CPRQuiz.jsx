@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import Mascot from '../components/Mascot';
 
 export default function CPRQuiz() {
   const navigate = useNavigate();
@@ -220,7 +221,7 @@ export default function CPRQuiz() {
                 <div className="pl-2">
                   {/* 使用 flex 讓圖片與文字水平對齊 */}
                   <div className="flex items-center gap-2 mb-1.5">
-                    <img src="/mascot/book.png" alt="Mascot" className="w-6 h-6 object-contain" />
+                    <Mascot variant="book" className="w-10 h-10 object-contain shrink-0" />
                     <span className="font-bold text-[#5B8DEF]">題目解析</span>
                   </div>
                   <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-line">

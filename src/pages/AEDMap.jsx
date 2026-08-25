@@ -3,12 +3,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { supabase } from '../supabaseClient';
 import { getDistance, userIcon, aedIcon } from '../utils/helpers';
+import Mascot from '../components/Mascot';
 
 
-// 搜尋半徑（公里）。取 AED 是「來回」路程：300 公尺代表要跑 600 公尺，
-// 加上找櫃子、開櫃的時間約需 5 分鐘，已經是 AHA 建議「倒地後 3-5 分鐘完成電擊」的上限。
-// 再遠的 AED 實務上來不及取回，列出來只會干擾判斷。
 const SEARCH_RADIUS_KM = 0.3;
+
+// 300 公尺內沒有 AED 時，逐步擴大找出最近的一台讓使用者自行判斷
+const FALLBACK_RADII_KM = [1, 3, 10];
+
+// 與清單內的距離顯示格式一致
+const formatDistance = (km) => (km < 1 ? `${Math.round(km * 1000)} 公尺` : `${km.toFixed(1)} 公里`);
 
 // 負責在使用者位置更新時移動地圖視角的元件
 function MapUpdater({ center }) {
@@ -25,72 +29,90 @@ export default function AEDMap() {
   const isFromEmergency = location.state?.fromEmergency;
   const [userLocation, setUserLocation] = useState(null);
   const [nearbyAeds, setNearbyAeds] = useState([]);
-  const [errorMsg, setErrorMsg] = useState("獲取 GPS 定位中...");
+  // 瀏覽器不支援定位時直接以該訊息起始，避免在 effect 內同步 setState
+  const [errorMsg, setErrorMsg] = useState(
+    () => ("geolocation" in navigator ? "獲取 GPS 定位中..." : "您的瀏覽器不支援定位")
+  );
 
   useEffect(() => {
-    if (!("geolocation" in navigator)) {
-      setErrorMsg("您的瀏覽器不支援定位");
-      return;
-    }
+    if (!("geolocation" in navigator)) return;
+
+    // 查詢指定半徑內的 AED，已依距離由近到遠排序
+    const queryAeds = async (currentLat, currentLng, radiusKm) => {
+
+      const KM_PER_DEG_LAT = 111.32;
+      const latDelta = radiusKm / KM_PER_DEG_LAT;
+      const lngDelta = radiusKm / (KM_PER_DEG_LAT * Math.cos(currentLat * Math.PI / 180));
+
+      const { data, error } = await supabase
+        .from('AedLocation')
+        .select('AEDID, 場所ID, 場所名稱, 地點LAT, 地點LNG, 場所地址, 開放使用時間備註, 周一至周五起, 周一至周五迄, AED放置地點, 場所描述')
+        .gte('地點LAT', currentLat - latDelta)
+        .lte('地點LAT', currentLat + latDelta)
+        .gte('地點LNG', currentLng - lngDelta)
+        .lte('地點LNG', currentLng + lngDelta);
+      if (error) throw error;
+
+      return data
+        .map(item => {
+          const memo = item['開放使用時間備註'];
+          const wdStart = item['周一至周五起'];
+          const wdEnd = item['周一至周五迄'];
+          let timeStr = "未提供時間";
+
+          if (memo && memo !== 'EMPTY' && memo.trim() !== '') {
+            timeStr = memo;
+          } else if (wdStart && wdStart !== 'EMPTY') {
+            timeStr = `平日 ${wdStart.substring(0,5)}-${wdEnd.substring(0,5)}`;
+          }
+          const placement = item['AED放置地點'] && item['AED放置地點'] !== 'EMPTY' ? item['AED放置地點'] : '';
+          const desc = item['場所描述'] && item['場所描述'] !== 'EMPTY' ? item['場所描述'] : '';
+          let detailInfo = placement;
+          if (desc) detailInfo += (detailInfo ? ` (${desc})` : desc);
+          if (!detailInfo) detailInfo = "無詳細位置資訊";
+
+          return {
+            id: item['AEDID'] || item['場所ID'] || Math.random(),
+            name: item['場所名稱'],
+            lat: parseFloat(item['地點LAT']),
+            lng: parseFloat(item['地點LNG']),
+            address: item['場所地址'],
+            time: timeStr,
+            detail: detailInfo
+          };
+        })
+        .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
+        .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
+        .filter(aed => aed.distance < radiusKm)
+        .sort((a, b) => a.distance - b.distance);
+      // ==========================================
+    };
 
     const fetchAeds = async (currentLat, currentLng) => {
       setErrorMsg("搜尋附近 AED 中...");
 
       try {
-        // 只向資料庫要「搜尋半徑方框內」且「實際會用到的欄位」，
-        // 而不是把全台 15000 筆、每筆所有欄位都抓回來再用前端過濾。
-        // 方框完整包住搜尋半徑的圓（角落比半徑更遠），所以不會漏掉任何應該出現的 AED。
-        const KM_PER_DEG_LAT = 111.32;
-        const latDelta = SEARCH_RADIUS_KM / KM_PER_DEG_LAT;
-        const lngDelta = SEARCH_RADIUS_KM / (KM_PER_DEG_LAT * Math.cos(currentLat * Math.PI / 180));
+        const withinRange = await queryAeds(currentLat, currentLng, SEARCH_RADIUS_KM);
+        if (withinRange.length > 0) {
+          setNearbyAeds(withinRange);
+          setErrorMsg(null);
+          return;
+        }
 
-        const { data, error } = await supabase
-          .from('AedLocation')
-          .select('AEDID, 場所ID, 場所名稱, 地點LAT, 地點LNG, 場所地址, 開放使用時間備註, 周一至周五起, 周一至周五迄, AED放置地點, 場所描述')
-          .gte('地點LAT', currentLat - latDelta)
-          .lte('地點LAT', currentLat + latDelta)
-          .gte('地點LNG', currentLng - lngDelta)
-          .lte('地點LNG', currentLng + lngDelta);
-        if (error) throw error;
-        
-        // ============== 邏輯區完全保留 ==============
-        const processedAeds = data
-          .map(item => {
-            const memo = item['開放使用時間備註'];
-            const wdStart = item['周一至周五起'];
-            const wdEnd = item['周一至周五迄'];
-            let timeStr = "未提供時間";
-            
-            if (memo && memo !== 'EMPTY' && memo.trim() !== '') {
-              timeStr = memo; 
-            } else if (wdStart && wdStart !== 'EMPTY') {
-              timeStr = `平日 ${wdStart.substring(0,5)}-${wdEnd.substring(0,5)}`;
-            }
-            const placement = item['AED放置地點'] && item['AED放置地點'] !== 'EMPTY' ? item['AED放置地點'] : '';
-            const desc = item['場所描述'] && item['場所描述'] !== 'EMPTY' ? item['場所描述'] : '';
-            let detailInfo = placement;
-            if (desc) detailInfo += (detailInfo ? ` (${desc})` : desc);
-            if (!detailInfo) detailInfo = "無詳細位置資訊";
-            
-            return {
-              id: item['AEDID'] || item['場所ID'] || Math.random(), 
-              name: item['場所名稱'],
-              lat: parseFloat(item['地點LAT']), 
-              lng: parseFloat(item['地點LNG']), 
-              address: item['場所地址'],
-              time: timeStr,
-              detail: detailInfo 
-            };
-          })
-          .filter(item => !isNaN(item.lat) && !isNaN(item.lng))
-          .map(aed => ({ ...aed, distance: getDistance(currentLat, currentLng, aed.lat, aed.lng) }))
-          .filter(aed => aed.distance < SEARCH_RADIUS_KM)
-          .sort((a, b) => a.distance - b.distance);
-        // ==========================================
-        
-        setNearbyAeds(processedAeds);
-        if (processedAeds.length === 0) setErrorMsg(`半徑 ${SEARCH_RADIUS_KM * 1000} 公尺內找不到 AED`);
-        else setErrorMsg(null);
+        for (const radiusKm of FALLBACK_RADII_KM) {
+          const found = await queryAeds(currentLat, currentLng, radiusKm);
+          if (found.length > 0) {
+            const nearest = found[0];
+            setNearbyAeds([nearest]);
+            setErrorMsg(
+              `${SEARCH_RADIUS_KM * 1000} 公尺內沒有 AED，最近的一台在 ${formatDistance(nearest.distance)} 外`
+            );
+            return;
+          }
+        }
+
+        setNearbyAeds([]);
+        setErrorMsg(`${FALLBACK_RADII_KM[FALLBACK_RADII_KM.length - 1]} 公里內都找不到 AED`);
       } catch (error) {
         console.error("Supabase 讀取錯誤:", error);
         setErrorMsg("無法連接資料庫");
@@ -126,6 +148,11 @@ export default function AEDMap() {
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
           </button>
           <h1 className="text-xl font-black text-[#2F2659] tracking-widest absolute left-1/2 transform -translate-x-1/2 z-40 pointer-events-auto">尋找 AED</h1>
+
+          {/* 右上角愛心角色（尺寸與歷史紀錄頁一致） */}
+          <div className="absolute right-0 top-0 w-25 h-32 pointer-events-none z-50">
+            <Mascot variant="map" className="w-full h-full object-contain drop-shadow-md" />
+          </div>
         </header>
 
         <main className="flex-1 relative flex flex-col pb-0">

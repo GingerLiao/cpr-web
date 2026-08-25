@@ -1,4 +1,4 @@
-const FILES = { hello:'hello', phone119:'phone-119', map:'map', book:'book', cpr:'cpr' };
+const FILES = { hello:'hello', phone119:'phone-119', map:'map', book:'book', history:'history' };
 
 export default function Mascot({ variant = 'hello', className = '', alt = 'CPR 小心臟' }) {
   const file = FILES[variant] || FILES.hello;

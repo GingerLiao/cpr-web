@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import Mascot from '../components/Mascot';
 
 export default function HistoryRecord() {
   const navigate = useNavigate();
@@ -390,7 +391,7 @@ export default function HistoryRecord() {
           
           {/* 右上角愛心角色 */}
           <div className="absolute right-0 top-0 w-25 h-32 pointer-events-none z-50">
-            <img src="/mascot/hello.png" alt="Mascot" className="w-full h-full object-contain drop-shadow-md" />
+            <Mascot variant="hello" className="w-full h-full object-contain drop-shadow-md" />
             <span className="absolute top-8 right-3 text-purple-300 text-xl font-black opacity-80">✦</span>
           </div>
         </header>

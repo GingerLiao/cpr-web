@@ -1,0 +1,12 @@
+# 統一換行字元處理，不受各人本機 core.autocrlf 設定影響。
+# text=auto：倉庫一律存 LF，checkout 時依平台自動轉換（Windows 給 CRLF）。
+# 沒有這個檔案的話，組員之間設定不同會產生「整個檔案都變了」的假 diff。
+* text=auto
+
+# 二進位檔不做任何換行轉換，否則內容會被破壞
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.svg text
+*.task binary

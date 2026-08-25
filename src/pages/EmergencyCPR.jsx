@@ -6,13 +6,20 @@ import { useNavigate, useLocation } from 'react-router-dom';
  * 直接用它的 display_name 不行：那是「門牌→路→里→區→縣市→國家」的相反順序，
  * 而且開頭常是最近的店家名稱，唸給接線人員聽會誤導。
  *
- * 欄位對應（實測）：直轄市→city+suburb(區)、縣→county+town(鄉鎮市)。
- * village/neighbourhood/city_district 多半是「里」，台灣地址慣例不寫，故排除。
+ * 注意：OSM 的欄位語意在台灣並不一致，不能靠欄位優先序挑。實測：
+ *   新北板橋  suburb=板橋區 neighbourhood=新民里   → 區在 suburb
+ *   桃園中壢  suburb=石頭里 town=中壢區            → 區在 town，suburb 是里
+ * 因此改成看「行政區後綴」判斷：市/縣為縣市層級，區/鄉/鎮/市為鄉鎮市區層級，
+ * 里/村不符合任何一組後綴，自然會被排除（台灣地址慣例也不寫里）。
  */
+const CITY_SUFFIX = /(市|縣)$/;
+const DISTRICT_SUFFIX = /(區|鄉|鎮|市)$/;
+
 function formatTaiwanAddress(a) {
   if (!a) return null;
-  const cityLevel = a.city || a.county || a.state || '';
-  const districtLevel = a.suburb || a.town || a.city_district || '';
+  const cityLevel = [a.city, a.county, a.state].find(v => v && CITY_SUFFIX.test(v)) || '';
+  const districtLevel = [a.suburb, a.town, a.city_district, a.village]
+    .find(v => v && v !== cityLevel && DISTRICT_SUFFIX.test(v)) || '';
   const road = a.road || '';
   let houseNo = a.house_number || '';
   // 有些地區回傳的 house_number 本身就含「號」（例如屏東恆春的 "18號"），避免變成「18號號」
@@ -36,6 +43,7 @@ export default function EmergencyCPR() {
   // 一進頁面就開始定位，不等使用者翻到第 2 步，爭取時間
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
@@ -89,7 +97,8 @@ export default function EmergencyCPR() {
           <div className="flex items-center">{currentStep.titleLeft}{currentStep.titleRight}</div>
         </header>
 
-        <main className="flex-1 px-6 py-6 flex flex-col overflow-y-auto pb-48">
+        {/* pb 要大於底部導覽列的高度（約 166px），否則捲到底時最後一顆按鈕會被它蓋住 */}
+        <main className="flex-1 px-6 py-6 flex flex-col overflow-y-auto pb-52">
           
           {/*  文字卡片：清爽白底微陰影，並將 bullet points 顏色改為紅色 (marker:text-rose-400) */}
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-6">
@@ -102,14 +111,22 @@ export default function EmergencyCPR() {
           <div className="space-y-4">
             {step === 1 && (
               <div className="flex flex-col gap-4">
-                {/* 目前位置：撥打 119 時唸給接線人員 */}
-                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <svg className="w-4 h-4 text-[#E35E68] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <span className="text-xs font-bold text-slate-500 tracking-wider">您目前的位置</span>
+                {/* 目前位置：撥打 119 時唸給接線人員。
+                    經緯度併到標題列以壓低卡片高度，避免把下方按鈕擠到被底部導覽列蓋住 */}
+                <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 text-[#E35E68] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className="text-[11px] font-bold text-slate-500 tracking-wider">您目前的位置</span>
+                    </div>
+                    {locStatus === 'ok' && coords && (
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                      </span>
+                    )}
                   </div>
 
                   {locStatus === 'locating' && (
@@ -117,23 +134,16 @@ export default function EmergencyCPR() {
                   )}
 
                   {(locStatus === 'denied' || locStatus === 'error') && (
-                    <div className="text-sm text-amber-600 font-medium leading-snug">
+                    <div className="text-xs text-amber-600 font-medium leading-snug">
                       {locStatus === 'denied' ? '未取得定位權限' : '無法取得定位'}，
                       請留意周遭門牌或明顯地標，向接線人員描述位置
                     </div>
                   )}
 
                   {locStatus === 'ok' && (
-                    <>
-                      <div className="text-lg font-bold text-slate-800 leading-relaxed">
-                        {address || '地址查詢中...'}
-                      </div>
-                      {coords && (
-                        <div className="text-xs text-slate-500 font-mono mt-2 pt-2 border-t border-slate-100">
-                          {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-                        </div>
-                      )}
-                    </>
+                    <div className="text-base font-bold text-slate-800 leading-snug">
+                      {address || '地址查詢中...'}
+                    </div>
                   )}
                 </div>
 
