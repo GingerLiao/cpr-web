@@ -86,8 +86,8 @@ Deno.serve(async (req: Request) => {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     return new Response(JSON.stringify({ 
-      advice: `【後端真實錯誤】: ${errorMessage}`,
-      ai_reply: `【後端真實錯誤】: ${errorMessage}`
+    advice: "目前 AI 分析伺服器忙碌中，請稍後再試。",
+    ai_reply: "目前 AI 分析伺服器忙碌中，請稍後再試。"
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
