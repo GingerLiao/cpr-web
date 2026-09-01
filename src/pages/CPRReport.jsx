@@ -123,7 +123,7 @@ export default function CPRReport() {
         
         {/* 頂部標題與返回鍵 */}
         <header className="sticky top-0 bg-[#F8F9FE] flex items-center justify-between px-6 pt-10 pb-4 z-50">
-          <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-slate-500 hover:bg-slate-50 active:scale-95 transition-all shrink-0 z-40">
+          <button onClick={handleBack} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-100 text-slate-500 hover:bg-slate-50 active:scale-95 transition-all shrink-0 z-40">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path></svg>
           </button>
           <h1 className="text-xl font-black text-[#2F2659] tracking-widest absolute left-1/2 transform -translate-x-1/2 z-40">練習分析</h1>
