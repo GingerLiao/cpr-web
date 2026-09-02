@@ -168,7 +168,10 @@ export default function AEDMap() {
           <div className="flex-1 w-full bg-slate-200 z-10 relative">
             {userLocation ? (
               <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution='使用 CARTO' />
+              <TileLayer
+                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_2rzs_1_b4e77661649b0ae94d7d8dc0"
+                attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+              />
                 <MapUpdater center={[userLocation.lat, userLocation.lng]} />
                 <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}><Popup>您在這裡</Popup></Marker>
                 
