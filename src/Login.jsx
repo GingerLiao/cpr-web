@@ -42,9 +42,14 @@ const Login = () => {
         <div className="absolute -top-6 -right-6 w-24 h-24 bg-[#FAF6F0]/50 rounded-full blur-xl"></div>
         <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-[#FAF6F0]/50 rounded-full blur-xl"></div>
         
-        <h2 className="text-3xl font-black mb-10 text-center text-slate-800 tracking-wider relative z-10">
-          {isRegistering ? '建立新帳號' : 'CPR 登入'}
-        </h2>
+        <div className="mb-10 text-center relative z-10">
+          <h2 className="text-3xl font-black text-slate-800 tracking-wider leading-tight">
+            {isRegistering ? '建立新帳號' : 'PocKit'}
+          </h2>
+          {!isRegistering && (
+            <p className="mt-1.5 text-sm font-medium text-slate-400 tracking-widest">口袋急救包</p>
+          )}
+        </div>
         
         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
           <div>

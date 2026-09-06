@@ -43,8 +43,8 @@ export default function Home({ session, isGuest }) {
                 <HeaderLogo />
               </div>
               <div className="flex flex-col">
-                <span className="text-[15px] font-black text-slate-800 leading-tight">CPR Smart Assist</span>
-                <span className="text-[11px] font-medium text-slate-400">智慧化 CPR 輔助系統</span>
+                <span className="text-[15px] font-black text-slate-800 leading-tight whitespace-nowrap">PocKit 口袋急救包</span>
+                <span className="text-[11px] font-medium text-slate-400">CPR 訓練輔助系統</span>
               </div>
             </div>
             <div className="relative flex items-center">

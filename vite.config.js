@@ -13,9 +13,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'CPR 輔助教學與緊急實作系統',
-        short_name: 'CPR Web',
-        description: 'CPR 教學、練習與緊急實作輔助系統',
+        name: 'PocKit 口袋急救包',
+        short_name: 'PocKit',
+        description: 'PocKit 口袋急救包 - CPR 教學、練習與緊急實作輔助系統',
         lang: 'zh-TW',
         start_url: '/',
         scope: '/',

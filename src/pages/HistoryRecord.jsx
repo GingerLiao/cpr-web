@@ -12,7 +12,6 @@ export default function HistoryRecord() {
   const touchStartX = useRef(null);
   const [cprHistory, setCprHistory] = useState([]);
   const [quizHistory, setQuizHistory] = useState([]);
-  const [totalBankCount, setTotalBankCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isQuizLoading, setIsQuizLoading] = useState(true);
 
@@ -75,10 +74,6 @@ export default function HistoryRecord() {
           })));
         }
 
-        const { count: bankCount } = await supabase
-          .from('QuestionBank')
-          .select('*', { count: 'exact', head: true });
-        setTotalBankCount(bankCount || 0);
       } catch (error) {
         console.error("獲取歷史紀錄失敗:", error);
       } finally {
@@ -240,15 +235,6 @@ export default function HistoryRecord() {
       )}
     </div>
   );
-
-  const masteredSet = new Set();
-  quizHistory.forEach(record => {
-    (record.details || []).forEach(item => {
-      if (item.userAns === item.correctAns) masteredSet.add(item.question);
-    });
-  });
-  const masteredCount = masteredSet.size;
-  const masteryRate = totalBankCount > 0 ? Math.round((masteredCount / totalBankCount) * 100) : 0;
 
   const dailyDataMap = {};
   cprHistory.forEach(record => {
@@ -450,60 +436,6 @@ export default function HistoryRecord() {
             <main className="flex-1 overflow-y-auto p-6 pt-2 pb-24 relative z-10">
               {activeTab === 'quiz' && (
                 <div className="animate-fade-in">
-                  {totalBankCount > 0 && (
-                    <div className="relative overflow-hidden rounded-[1.5rem] p-5 mb-4 shadow-sm border border-slate-50/50 flex items-center justify-between bg-gradient-to-r from-[#FFF0F4] via-[#F3EBF5] to-[#FAF8FC]">
-                      
-                      {/* 右側純白底色區塊 (帶左側半圓弧度，完美切分背景) */}
-                      <div className="absolute right-0 top-0 h-full w-[110px] bg-white rounded-l-[60px] z-0 shadow-[-2px_0_10px_rgba(0,0,0,0.02)]"></div>
-
-                      {/* 左側文字與進度條 */}
-                      <div className="flex-1 pr-6 z-10">
-                        <h2 className="text-[#37324f] font-bold text-[13px] mb-1">題庫掌握度</h2>
-                        <div className="text-[15px] font-bold text-[#37324f] mb-3 tracking-wide">
-                          已答對 <span className="text-[#D56574] mx-0.5">{masteredCount}</span> / {totalBankCount} 題
-                        </div>
-                        
-                        {/* 底部線性進度條 */}
-                        <div className="w-full bg-[#F5DDE1]/60 h-[7px] rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#D56574] rounded-full transition-all duration-700 ease-out"
-                            style={{ width: `${masteryRate}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* 右側 SVG 圓環進度指示器 */}
-                      <div className="relative z-10 w-[72px] h-[72px] flex items-center justify-center shrink-0 pr-1">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                          {/* 底部淺色外環 */}
-                          <path
-                            className="text-[#F5DDE1]"
-                            strokeWidth="2"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          {/* 數值填滿環 (利用 strokeDasharray 控制進度) */}
-                          <path
-                            className="text-[#D56574]"
-                            strokeWidth="2.5"
-                            strokeDasharray={`${masteryRate}, 100`}
-                            strokeLinecap="round"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                        </svg>
-                        {/* 中央文字 */}
-                        <div className="absolute inset-0 flex items-center justify-center pr-1">
-                          <span className="text-[#D56574] text-[22px] font-black">
-                            {masteryRate}<span className="text-[13px] ml-[1px]">%</span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* 測驗紀錄清單 */}
                   <h3 className="font-bold text-slate-500 mb-4 flex items-center gap-2 text-sm ml-1">
                     <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
